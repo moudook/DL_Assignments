@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Neural Network 3D Visualization</title>
+<style>
+  body { margin: 0; overflow: hidden; background: #1a1a2e; font-family: Arial, sans-serif; }
+  canvas { display: block; }
+  #info {
+    position: absolute; top: 10px; left: 10px; color: #e0e0e0;
+    background: rgba(0,0,0,0.7); padding: 15px; border-radius: 8px;
+    max-width: 320px; font-size: 13px; line-height: 1.6;
+  }
+  #info h2 { margin: 0 0 10px 0; color: #00d4ff; font-size: 16px; }
+  #info .layer-label { color: #ffaa00; font-weight: bold; }
+  #legend {
+    position: absolute; bottom: 10px; left: 10px; color: #e0e0e0;
+    background: rgba(0,0,0,0.7); padding: 10px 15px; border-radius: 8px;
+    font-size: 12px;
+  }
+  .legend-item { display: flex; align-items: center; margin: 4px 0; }
+  .legend-dot { width: 12px; height: 12px; border-radius: 50%; margin-right: 8px; }
+  #controls {
+    position: absolute; top: 10px; right: 10px; color: #e0e0e0;
+    background: rgba(0,0,0,0.7); padding: 15px; border-radius: 8px;
+  }
+  button {
+    background: #00d4ff; color: #1a1a2e; border: none; padding: 8px 16px;
+    border-radius: 4px; cursor: pointer; margin: 4px; font-weight: bold;
+  }
+  button:hover { background: #00a8cc; }
+  #step-info {
+    position: absolute; bottom: 10px; right: 10px; color: #e0e0e0;
+    background: rgba(0,0,0,0.7); padding: 15px; border-radius: 8px;
+    max-width: 350px; font-size: 12px; line-height: 1.6;
+  }
+  #step-info h3 { margin: 0 0 8px 0; color: #ff6b6b; }
+</style>
+</head>
+<body>
+
+<div id="info">
+  <h2>XOR Neural Network — 3D View</h2>
+  <p><span class="layer-label">Input Layer (not neurons):</span><br>
+  Raw data: x1, x2, bias=1<br>
+  These don't compute anything — just hand data forward.</p>
+
+  <p><span class="layer-label">Hidden Layer (2 neurons):</span><br>
+  h1 = sigmoid(w11*x1 + w12*x2 + b1)<br>
+  h2 = sigmoid(w21*x1 + w22*x2 + b2)<br>
+  These COMPUTE new features from the input.</p>
+
+  <p><span class="layer-label">Output Layer (1 neuron):</span><br>
+  yhat = sigmoid(v1*h1 + v2*h2 + b3)<br>
+  This makes the final decision.</p>
+
+  <p><strong>Total: 3 neurons</strong> (2 hidden + 1 output)</p>
+</div>
+
+<div id="controls">
+  <button onclick="toggleAnimation()">Pause/Play</button>
+  <button onclick="resetView()">Reset View</button>
+  <button onclick="nextStep()">Next Step</button>
+  <button onclick="prevStep()">Prev Step</button>
+</div>
+
+<div id="legend">
+  <div class="legend-item"><div class="legend-dot" style="background:#00d4ff"></div> Input (x1, x2, bias)</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#ff6b6b"></div> Hidden neurons (h1, h2)</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#51cf66"></div> Output neuron (yhat)</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#ffd43b; width:20px; height:3px; border-radius:0"></div> Weights (connections)</div>
+</div>
+
+<div id="step-info">
+  <h3>Step: <span id="step-name">Architecture</span></h3>
+  <p id="step-desc">Drag to rotate. Scroll to zoom. Click Next/Prev to see forward and backward pass.</p>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+// Scene setup
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setClearColor(0x1a1a2e);
+document.body.appendChild(renderer.domElement);
+
+// Camera position
+camera.position.set(0, 2, 8);
+camera.lookAt(0, 0, 0);
+
+// Lights
+const ambientLight = new THREE.AmbientLight(0x404040, 0.5);
+scene.add(ambientLight);
+const pointLight = new THREE.PointLight(0xffffff, 0.8);
+pointLight.position.set(5, 5, 5);
+scene.add(pointLight);
+
+// Layer positions (x positions for each layer)
+const layerX = { input: -3, hidden: 0, output: 3 };
+
+// Create neurons
+function createNeuron(x, y, z, color, label, size = 0.3) {
+  const geometry = new THREE.SphereGeometry(size, 32, 32);
+  const material = new THREE.MeshPhongMaterial({ 
+    color: color, 
+    emissive: color, 
+    emissiveIntensity: 0.3,
+    transparent: true,
+    opacity: 0.9
+  });
+  const sphere = new THREE.Mesh(geometry, material);
+  sphere.position.set(x, y, z);
+  scene.add(sphere);
+
+  // Label (using sprite)
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 64;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = 'white';
+  ctx.font = 'bold 36px Arial';
+  ctx.textAlign = 'center';
+  ctx.fillText(label, 128, 40);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  const spriteMaterial = new THREE.SpriteMaterial({ map: texture });
+  const sprite = new THREE.Sprite(spriteMaterial);
+  sprite.position.set(x, y + 0.5, z);
+  sprite.scale.set(1, 0.25, 1);
+  scene.add(sprite);
+
+  return { mesh: sphere, sprite: sprite };
+}
+
+// Create weights (connections between layers)
+function createWeight(from, to, color, label) {
+  const points = [];
+  points.push(from.mesh.position.clone());
+  points.push(to.mesh.position.clone());
+
+  const geometry = new THREE.BufferGeometry().setFromPoints(points);
+  const material = new THREE.LineBasicMaterial({ 
+    color: color, 
+    linewidth: 2,
+    transparent: true,
+    opacity: 0.6
+  });
+  const line = new THREE.Line(geometry, material);
+  scene.add(line);
+
+  // Weight label at midpoint
+  const mid = new THREE.Vector3().addVectors(from.mesh.position, to.mesh.position).multiplyScalar(0.5);
+  const canvas = document.createElement('canvas');
+  canvas.width = 128;
+  canvas.height = 64;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#ffd43b';
+  ctx.font = 'bold 24px Arial';
+  ctx.textAlign = 'center';
+  ctx.fillText(label, 64, 40);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  const spriteMaterial = new THREE.SpriteMaterial({ map: texture });
+  const sprite = new THREE.Sprite(spriteMaterial);
+  sprite.position.copy(mid);
+  sprite.scale.set(0.6, 0.15, 1);
+  scene.add(sprite);
+
+  return { line: line, sprite: sprite };
+}
+
+// Input layer (data, not neurons) - cyan
+const x1 = createNeuron(layerX.input, 1, 0, 0x00d4ff, 'x1');
+const x2 = createNeuron(layerX.input, 0, 0, 0x00d4ff, 'x2');
+const bias1 = createNeuron(layerX.input, -1, 0, 0x00d4ff, 'b=1');
+
+// Hidden layer (2 neurons) - red
+const h1 = createNeuron(layerX.hidden, 0.75, 0, 0xff6b6b, 'h1');
+const h2 = createNeuron(layerX.hidden, -0.75, 0, 0xff6b6b, 'h2');
+
+// Output layer (1 neuron) - green
+const yhat = createNeuron(layerX.output, 0, 0, 0x51cf66, 'yhat', 0.4);
+
+// Weights: Input → Hidden (W1)
+const w11 = createWeight(x1, h1, 0xffd43b, 'w11');
+const w12 = createWeight(x2, h1, 0xffd43b, 'w12');
+const wb1 = createWeight(bias1, h1, 0xffd43b, 'b1');
+
+const w21 = createWeight(x1, h2, 0xffd43b, 'w21');
+const w22 = createWeight(x2, h2, 0xffd43b, 'w22');
+const wb2 = createWeight(bias1, h2, 0xffd43b, 'b2');
+
+// Weights: Hidden → Output (W2)
+const v1 = createWeight(h1, yhat, 0xffd43b, 'v1');
+const v2 = createWeight(h2, yhat, 0xffd43b, 'v2');
+const b3 = createWeight(bias1, yhat, 0xffd43b, 'b3');
+
+// Animation state
+let animating = true;
+let step = 0;
+const steps = [
+  { name: 'Architecture', desc: 'The full network. Input (cyan) → Hidden (red) → Output (green). Yellow lines are weights.' },
+  { name: 'Forward: Input → Hidden', desc: 'h1 = sigmoid(w11*x1 + w12*x2 + b1). h2 = sigmoid(w21*x1 + w22*x2 + b2). Data flows right.' },
+  { name: 'Forward: Hidden → Output', desc: 'yhat = sigmoid(v1*h1 + v2*h2 + b3). The output neuron reads hidden values and decides.' },
+  { name: 'Loss: Compare yhat with actual', desc: 'Loss = 0.5 * (y - yhat)^2. How wrong is the prediction?' },
+  { name: 'Backward: Output layer', desc: 'd_out = (y - yhat) * yhat*(1-yhat). Update v1, v2, b3 using this error.' },
+  { name: 'Backward: Hidden layer', desc: 'error_h1 = d_out * v1. error_h2 = d_out * v2. Update W1 weights using hidden errors.' },
+  { name: 'Backward: All weights updated', desc: 'Both W1 and W2 updated. Repeat for next epoch until loss is small.' }
+];
+
+function updateStepInfo() {
+  document.getElementById('step-name').textContent = steps[step].name;
+  document.getElementById('step-desc').textContent = steps[step].desc;
+}
+
+function toggleAnimation() {
+  animating = !animating;
+}
+
+function resetView() {
+  camera.position.set(0, 2, 8);
+  camera.lookAt(0, 0, 0);
+}
+
+function nextStep() {
+  step = (step + 1) % steps.length;
+  updateStepInfo();
+}
+
+function prevStep() {
+  step = (step - 1 + steps.length) % steps.length;
+  updateStepInfo();
+}
+
+// Mouse rotation
+let isDragging = false;
+let previousMouse = { x: 0, y: 0 };
+let rotation = { x: 0, y: 0 };
+
+renderer.domElement.addEventListener('mousedown', (e) => {
+  isDragging = true;
+  previousMouse = { x: e.clientX, y: e.clientY };
+});
+
+renderer.domElement.addEventListener('mousemove', (e) => {
+  if (!isDragging) return;
+  const deltaX = e.clientX - previousMouse.x;
+  const deltaY = e.clientY - previousMouse.y;
+  rotation.y += deltaX * 0.005;
+  rotation.x += deltaY * 0.005;
+  previousMouse = { x: e.clientX, y: e.clientY };
+});
+
+renderer.domElement.addEventListener('mouseup', () => isDragging = false);
+renderer.domElement.addEventListener('mouseleave', () => isDragging = false);
+
+// Zoom
+renderer.domElement.addEventListener('wheel', (e) => {
+  camera.position.z += e.deltaY * 0.01;
+  camera.position.z = Math.max(3, Math.min(15, camera.position.z));
+});
+
+// Animation loop
+function animate() {
+  requestAnimationFrame(animate);
+
+  if (animating && !isDragging) {
+    rotation.y += 0.003;
+  }
+
+  // Rotate all objects around Y axis
+  scene.rotation.y = rotation.y;
+  scene.rotation.x = rotation.x;
+
+  renderer.render(scene, camera);
+}
+
+animate();
+</script>
+</body>
+</html>

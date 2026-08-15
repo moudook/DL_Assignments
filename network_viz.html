@@ -1,0 +1,720 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Neural Network — Live Visualization</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { 
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    background: #0a0a0f; 
+    color: #e0e0e0;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  .header {
+    text-align: center;
+    padding: 20px;
+    background: linear-gradient(135deg, #1a1a2e, #16213e);
+    border-bottom: 1px solid #333;
+  }
+  .header h1 { font-size: 1.4em; color: #7ec8e3; font-weight: 400; }
+  .header p { font-size: 0.85em; color: #888; margin-top: 5px; }
+
+  .main { display: flex; gap: 20px; padding: 20px; max-width: 1400px; margin: 0 auto; }
+
+  .canvas-panel {
+    flex: 1;
+    background: #111;
+    border-radius: 12px;
+    border: 1px solid #222;
+    padding: 20px;
+    min-height: 500px;
+    position: relative;
+  }
+
+  .side-panel {
+    width: 380px;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+  }
+
+  .card {
+    background: #111;
+    border-radius: 12px;
+    border: 1px solid #222;
+    padding: 15px;
+  }
+  .card h3 {
+    font-size: 0.9em;
+    color: #7ec8e3;
+    margin-bottom: 10px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+
+  .controls {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+
+  button {
+    background: #1a3a5c;
+    color: #7ec8e3;
+    border: 1px solid #2a5a8c;
+    padding: 8px 18px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.85em;
+    transition: all 0.2s;
+  }
+  button:hover { background: #2a5a8c; }
+  button.active { background: #7ec8e3; color: #0a0a0f; }
+
+  select, input[type="range"] {
+    background: #1a1a2e;
+    color: #e0e0e0;
+    border: 1px solid #333;
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-size: 0.85em;
+  }
+
+  .math-display {
+    font-family: 'Courier New', monospace;
+    font-size: 0.82em;
+    line-height: 1.7;
+    color: #b0b0b0;
+    background: #0a0a12;
+    padding: 12px;
+    border-radius: 8px;
+    border: 1px solid #1a1a2e;
+    max-height: 300px;
+    overflow-y: auto;
+  }
+  .math-display .highlight { color: #7ec8e3; font-weight: bold; }
+  .math-display .layer-label { color: #e8a87c; font-weight: bold; }
+  .math-display .value { color: #85dc8a; }
+  .math-display .error { color: #e87c7c; }
+  .math-display .arrow { color: #666; }
+
+  .legend {
+    display: flex;
+    gap: 15px;
+    font-size: 0.8em;
+    color: #888;
+    margin-top: 10px;
+  }
+  .legend-item { display: flex; align-items: center; gap: 5px; }
+  .legend-dot {
+    width: 10px; height: 10px; border-radius: 50%;
+  }
+
+  .xordata {
+    display: grid;
+    grid-template-columns: auto auto auto auto;
+    gap: 4px 12px;
+    font-size: 0.82em;
+    font-family: monospace;
+  }
+  .xordata .cell { padding: 3px 8px; border-radius: 3px; }
+  .xordata .header { color: #7ec8e3; font-weight: bold; }
+  .xordata .c0 { background: #1a2a3a; color: #7ec8e3; }
+  .xordata .c1 { background: #2a1a1a; color: #e8a87c; }
+
+  canvas { display: block; margin: 0 auto; }
+
+  .speed-control { display: flex; align-items: center; gap: 8px; }
+  .speed-control label { font-size: 0.8em; color: #888; }
+
+  .epoch-display {
+    font-size: 1.2em;
+    color: #7ec8e3;
+    font-family: monospace;
+    text-align: center;
+    padding: 5px;
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Two-Layer Neural Network — XOR Problem</h1>
+  <p>Input (2) → Hidden (2 neurons) → Output (1 neuron) — Watch data flow through each layer</p>
+</div>
+
+<div class="main">
+  <!-- LEFT: Network Canvas -->
+  <div class="canvas-panel">
+    <canvas id="networkCanvas" width="700" height="460"></canvas>
+    <div class="legend">
+      <div class="legend-item"><div class="legend-dot" style="background:#5a9fd4"></div> Input (data)</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#e8a87c"></div> Hidden (computed)</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#85dc8a"></div> Output (prediction)</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#e87c7c"></div> Error signal</div>
+    </div>
+  </div>
+
+  <!-- RIGHT: Info Panel -->
+  <div class="side-panel">
+
+    <!-- Controls -->
+    <div class="card">
+      <h3>Controls</h3>
+      <div class="controls">
+        <button id="btnPlay" onclick="togglePlay()">▶ Play</button>
+        <button onclick="stepForward()">Step</button>
+        <button onclick="resetNetwork()">Reset</button>
+        <button onclick="trainFull()">Train 500</button>
+      </div>
+      <div class="controls" style="margin-top: 10px;">
+        <div class="speed-control">
+          <label>Speed:</label>
+          <input type="range" id="speedSlider" min="1" max="10" value="5">
+        </div>
+      </div>
+      <div class="epoch-display">Epoch: <span id="epochCount">0</span></div>
+    </div>
+
+    <!-- XOR Data -->
+    <div class="card">
+      <h3>XOR Data</h3>
+      <div class="xordata">
+        <div class="cell header">x1</div>
+        <div class="cell header">x2</div>
+        <div class="cell header">y</div>
+        <div class="cell header">Meaning</div>
+        <div class="cell c0">0</div><div class="cell c0">0</div><div class="cell c0">0</div><div class="cell c0">same → 0</div>
+        <div class="cell c0">0</div><div class="cell c1">1</div><div class="cell c1">1</div><div class="cell c1">diff → 1</div>
+        <div class="cell c1">1</div><div class="cell c0">0</div><div class="cell c1">1</div><div class="cell c1">diff → 1</div>
+        <div class="cell c0">1</div><div class="cell c0">1</div><div class="cell c0">0</div><div class="cell c0">same → 0</div>
+      </div>
+    </div>
+
+    <!-- Network Values -->
+    <div class="card">
+      <h3>Live Computation</h3>
+      <div class="math-display" id="mathDisplay">
+        Press Play or Step to see the computation.
+      </div>
+    </div>
+
+    <!-- Weights -->
+    <div class="card">
+      <h3>Current Weights</h3>
+      <div class="math-display" id="weightsDisplay">
+        Loading...
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+// NEURAL NETWORK — 2-layer XOR solver
+// ═══════════════════════════════════════════════════════════════
+
+const canvas = document.getElementById('networkCanvas');
+const ctx = canvas.getContext('2d');
+
+// XOR dataset
+const XOR = [
+  { x: [1, 0, 0], y: 0 },  // bias=1, x1=0, x2=0
+  { x: [1, 0, 1], y: 1 },
+  { x: [1, 1, 0], y: 1 },
+  { x: [1, 1, 1], y: 0 }
+];
+
+// Network state
+let W1 = [], W2 = [];  // weights
+let b1 = 0, b2 = 0;    // hidden biases
+let v1 = 0, v2 = 0, b3 = 0;  // output weights
+let h1 = 0, h2 = 0;    // hidden activations
+let yhat = 0;           // output
+let error = 0;
+let epoch = 0;
+let loss = 0;
+let playing = false;
+let animStep = 0;
+let animPhase = '';  // 'forward-h1', 'forward-h2', 'forward-out', 'loss', 'backward-out', 'backward-h1', 'backward-h2', 'update'
+let currentSample = 0;
+let B = 1.0;  // sigmoid beta
+let eta = 0.5;
+
+// Sigmoid
+function sigmoid(z) { return 1 / (1 + Math.exp(-B * z)); }
+function sigmoidDeriv(s) { return B * s * (1 - s); }
+
+// Initialize weights
+function initWeights() {
+  W1 = [
+    [(Math.random()-0.5)*2, (Math.random()-0.5)*2],
+    [(Math.random()-0.5)*2, (Math.random()-0.5)*2]
+  ];
+  v1 = (Math.random()-0.5)*2;
+  v2 = (Math.random()-0.5)*2;
+  b3 = (Math.random()-0.5)*2;
+  epoch = 0;
+  loss = 0;
+}
+
+// Forward pass for one sample
+function forward(sample) {
+  const x = sample.x;
+  const z1 = W1[0][0]*x[0] + W1[0][1]*x[1] + W1[0][2]*x[2];
+  const z2 = W1[1][0]*x[0] + W1[1][1]*x[1] + W1[1][2]*x[2];
+  h1 = sigmoid(z1);
+  h2 = sigmoid(z2);
+  const z3 = v1*h1 + v2*h2 + b3;
+  yhat = sigmoid(z3);
+  error = sample.y - yhat;
+  loss = 0.5 * error * error;
+  return { z1, z2, h1, h2, z3, yhat, error, loss };
+}
+
+// Backward pass
+function backward(sample) {
+  const x = sample.x;
+
+  // Output layer gradient
+  const d_out = error * sigmoidDeriv(yhat);
+
+  // Hidden layer gradients
+  const d_h1 = d_out * v1 * sigmoidDeriv(h1);
+  const d_h2 = d_out * v2 * sigmoidDeriv(h2);
+
+  // Update output weights
+  v1 += eta * d_out * h1;
+  v2 += eta * d_out * h2;
+  b3 += eta * d_out;
+
+  // Update hidden weights
+  W1[0][0] += eta * d_h1 * x[0];
+  W1[0][1] += eta * d_h1 * x[1];
+  W1[0][2] += eta * d_h1 * x[2];
+  W1[1][0] += eta * d_h2 * x[0];
+  W1[1][1] += eta * d_h2 * x[1];
+  W1[1][2] += eta * d_h2 * x[2];
+
+  return { d_out, d_h1, d_h2 };
+}
+
+// ═══════════════════════════════════════════════════════════════
+// DRAWING
+// ═══════════════════════════════════════════════════════════════
+
+const layers = [
+  { label: 'INPUT', x: 120, neurons: ['x0=1', 'x1', 'x2'], color: '#5a9fd4', values: [1, 0, 0] },
+  { label: 'HIDDEN', x: 350, neurons: ['h1', 'h2'], color: '#e8a87c', values: [0, 0] },
+  { label: 'OUTPUT', x: 580, neurons: ['yhat'], color: '#85dc8a', values: [0] }
+];
+
+function getNeuronPos(layer, neuron) {
+  const l = layers[layer];
+  const n = layers[layer].neurons.length;
+  const spacing = 100;
+  const startY = 230 - (n-1)*spacing/2;
+  return { x: l.x, y: startY + neuron * spacing };
+}
+
+function drawConnection(x1, y1, x2, y2, weight, color, active) {
+  ctx.beginPath();
+  ctx.moveTo(x1+25, y1);
+  ctx.lineTo(x2-25, y2);
+  ctx.strokeStyle = active ? color : '#1a1a2e';
+  ctx.lineWidth = active ? Math.max(1, Math.abs(weight)*2) : 0.5;
+  ctx.globalAlpha = active ? 0.6 : 0.15;
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+
+  // Weight label
+  if (active) {
+    const mx = (x1+x2)/2, my = (y1+y2)/2;
+    ctx.fillStyle = '#666';
+    ctx.font = '10px monospace';
+    ctx.fillText(weight.toFixed(2), mx-12, my-5);
+  }
+}
+
+function drawNeuron(x, y, label, value, color, active, isInput) {
+  const radius = 22;
+
+  // Glow
+  if (active) {
+    const grad = ctx.createRadialGradient(x, y, 0, x, y, radius*2);
+    grad.addColorStop(0, color+'40');
+    grad.addColorStop(1, 'transparent');
+    ctx.fillStyle = grad;
+    ctx.fillRect(x-radius*2, y-radius*2, radius*4, radius*4);
+  }
+
+  // Circle
+  ctx.beginPath();
+  ctx.arc(x, y, radius, 0, Math.PI*2);
+  ctx.fillStyle = active ? color+'30' : '#111';
+  ctx.fill();
+  ctx.strokeStyle = active ? color : '#333';
+  ctx.lineWidth = active ? 2 : 1;
+  ctx.stroke();
+
+  // Value inside
+  ctx.fillStyle = active ? '#fff' : '#555';
+  ctx.font = 'bold 12px monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const displayVal = typeof value === 'number' ? value.toFixed(2) : value;
+  ctx.fillText(displayVal, x, y);
+
+  // Label below
+  ctx.fillStyle = active ? color : '#444';
+  ctx.font = '11px monospace';
+  ctx.fillText(label, x, y + radius + 15);
+}
+
+function drawLayerLabel(x, label) {
+  ctx.fillStyle = '#444';
+  ctx.font = '12px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(label, x, 430);
+}
+
+function drawForwardArrow(progress) {
+  if (progress <= 0) return;
+  const startX = 160, endX = 550;
+  const y = 20;
+  const currentX = startX + (endX - startX) * Math.min(progress, 1);
+
+  ctx.beginPath();
+  ctx.moveTo(startX, y);
+  ctx.lineTo(currentX, y);
+  ctx.strokeStyle = '#7ec8e3';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // Arrow head
+  if (progress > 0.1) {
+    ctx.beginPath();
+    ctx.moveTo(currentX, y);
+    ctx.lineTo(currentX-8, y-5);
+    ctx.lineTo(currentX-8, y+5);
+    ctx.fillStyle = '#7ec8e3';
+    ctx.fill();
+  }
+
+  ctx.fillStyle = '#7ec8e3';
+  ctx.font = '11px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('FORWARD →', (startX+endX)/2, y-10);
+}
+
+function drawBackwardArrow(progress) {
+  if (progress <= 0) return;
+  const startX = 550, endX = 160;
+  const y = 440;
+  const currentX = startX + (endX - startX) * Math.min(progress, 1);
+
+  ctx.beginPath();
+  ctx.moveTo(startX, y);
+  ctx.lineTo(currentX, y);
+  ctx.strokeStyle = '#e87c7c';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  if (progress > 0.1) {
+    ctx.beginPath();
+    ctx.moveTo(currentX, y);
+    ctx.lineTo(currentX+8, y-5);
+    ctx.lineTo(currentX+8, y+5);
+    ctx.fillStyle = '#e87c7c';
+    ctx.fill();
+  }
+
+  ctx.fillStyle = '#e87c7c';
+  ctx.font = '11px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('← BACKWARD', (startX+endX)/2, y+15);
+}
+
+function draw() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  const sample = XOR[currentSample];
+  const isActive = animPhase !== '';
+
+  // Draw connections: input → hidden
+  for (let j = 0; j < 2; j++) {
+    for (let i = 0; i < 3; i++) {
+      const p1 = getNeuronPos(0, i);
+      const p2 = getNeuronPos(1, j);
+      const active = isActive && (animPhase.includes('h') || animPhase.includes('forward'));
+      drawConnection(p1.x, p1.y, p2.x, p2.y, W1[j][i], '#e8a87c', active);
+    }
+  }
+
+  // Draw connections: hidden → output
+  for (let j = 0; j < 2; j++) {
+    const p1 = getNeuronPos(1, j);
+    const p2 = getNeuronPos(2, 0);
+    const active = isActive && (animPhase.includes('out') || animPhase.includes('forward'));
+    drawConnection(p1.x, p1.y, p2.x, p2.y, j===0 ? v1 : v2, '#85dc8a', active);
+  }
+
+  // Draw neurons
+  const inputActive = isActive && animPhase.includes('forward');
+  const hiddenActive = isActive && (animPhase.includes('h') || animPhase.includes('backward-h'));
+  const outputActive = isActive && (animPhase.includes('out') || animPhase.includes('backward-out'));
+
+  drawNeuron(getNeuronPos(0,0).x, getNeuronPos(0,0).y, 'x0=1', '1.00', '#5a9fd4', inputActive, true);
+  drawNeuron(getNeuronPos(0,1).x, getNeuronPos(0,1).y, 'x1', sample.x[1].toFixed(0), '#5a9fd4', inputActive, true);
+  drawNeuron(getNeuronPos(0,2).x, getNeuronPos(0,2).y, 'x2', sample.x[2].toFixed(0), '#5a9fd4', inputActive, true);
+
+  drawNeuron(getNeuronPos(1,0).x, getNeuronPos(1,0).y, 'h1', h1.toFixed(3), '#e8a87c', hiddenActive, false);
+  drawNeuron(getNeuronPos(1,1).x, getNeuronPos(1,1).y, 'h2', h2.toFixed(3), '#e8a87c', hiddenActive, false);
+
+  drawNeuron(getNeuronPos(2,0).x, getNeuronPos(2,0).y, 'yhat', yhat.toFixed(3), '#85dc8a', outputActive, false);
+
+  // Layer labels
+  drawLayerLabel(120, 'INPUT LAYER');
+  drawLayerLabel(350, 'HIDDEN LAYER');
+  drawLayerLabel(580, 'OUTPUT LAYER');
+
+  // Arrows
+  if (animPhase.includes('forward')) drawForwardArrow(1);
+  if (animPhase.includes('backward')) drawBackwardArrow(1);
+
+  // Sample info
+  ctx.fillStyle = '#666';
+  ctx.font = '12px monospace';
+  ctx.textAlign = 'left';
+  ctx.fillText(`Sample: [${sample.x[1]}, ${sample.x[2]}] → ${sample.y}`, 20, 20);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ANIMATION
+// ═══════════════════════════════════════════════════════════════
+
+const phases = [
+  'forward-h1', 'forward-h2', 'forward-out', 'loss',
+  'backward-out', 'backward-h1', 'backward-h2', 'update'
+];
+
+let phaseIndex = 0;
+
+function stepForward() {
+  const sample = XOR[currentSample];
+
+  if (phaseIndex === 0) {
+    // Forward pass - compute everything
+    const result = forward(sample);
+    animPhase = 'forward';
+    updateMathDisplay('forward', sample, result);
+  } else if (phaseIndex === 1) {
+    // Backward pass
+    const grads = backward(sample);
+    animPhase = 'backward';
+    updateMathDisplay('backward', sample, grads);
+  } else if (phaseIndex === 2) {
+    // Move to next sample
+    currentSample = (currentSample + 1) % 4;
+    if (currentSample === 0) epoch++;
+    animPhase = '';
+    phaseIndex = -1;
+    document.getElementById('epochCount').textContent = epoch;
+    updateWeightsDisplay();
+  }
+
+  phaseIndex++;
+  if (phaseIndex > 2) phaseIndex = 0;
+  draw();
+}
+
+function updateMathDisplay(phase, sample, data) {
+  const el = document.getElementById('mathDisplay');
+  let html = '';
+
+  if (phase === 'forward') {
+    html += `<span class="layer-label">── FORWARD PASS ──</span>
+`;
+    html += `<span class="arrow">Input:</span> [${sample.x[1]}, ${sample.x[2]}]
+
+`;
+
+    html += `<span class="layer-label">Hidden Layer (2 neurons):</span>
+`;
+    html += `<span class="arrow">h1:</span> z1 = ${W1[0][0].toFixed(2)}×${sample.x[0]} + ${W1[0][1].toFixed(2)}×${sample.x[1]} + ${W1[0][2].toFixed(2)}×${sample.x[2]}
+`;
+    html += `     z1 = ${(W1[0][0]*sample.x[0] + W1[0][1]*sample.x[1] + W1[0][2]*sample.x[2]).toFixed(3)}
+`;
+    html += `     <span class="value">h1 = sigmoid(z1) = ${data.h1.toFixed(4)}</span>
+
+`;
+
+    html += `<span class="arrow">h2:</span> z2 = ${W1[1][0].toFixed(2)}×${sample.x[0]} + ${W1[1][1].toFixed(2)}×${sample.x[1]} + ${W1[1][2].toFixed(2)}×${sample.x[2]}
+`;
+    html += `     z2 = ${(W1[1][0]*sample.x[0] + W1[1][1]*sample.x[1] + W1[1][2]*sample.x[2]).toFixed(3)}
+`;
+    html += `     <span class="value">h2 = sigmoid(z2) = ${data.h2.toFixed(4)}</span>
+
+`;
+
+    html += `<span class="layer-label">Output Layer (1 neuron):</span>
+`;
+    html += `<span class="arrow">out:</span> z3 = ${v1.toFixed(2)}×${data.h1.toFixed(3)} + ${v2.toFixed(2)}×${data.h2.toFixed(3)} + ${b3.toFixed(2)}
+`;
+    html += `      z3 = ${(v1*data.h1 + v2*data.h2 + b3).toFixed(3)}
+`;
+    html += `      <span class="value">yhat = sigmoid(z3) = ${data.yhat.toFixed(4)}</span>
+
+`;
+
+    html += `<span class="error">Error = ${sample.y} - ${data.yhat.toFixed(4)} = ${data.error.toFixed(4)}</span>
+`;
+    html += `<span class="error">Loss = 0.5 × ${data.error.toFixed(4)}² = ${data.loss.toFixed(4)}</span>`;
+  }
+
+  if (phase === 'backward') {
+    html += `<span class="layer-label">── BACKWARD PASS ──</span>
+`;
+    html += `<span class="error">Error = ${sample.y} - ${yhat.toFixed(4)} = ${error.toFixed(4)}</span>
+
+`;
+
+    html += `<span class="layer-label">Output Layer gradients:</span>
+`;
+    const d_out = error * sigmoidDeriv(yhat);
+    html += `d_out = error × sigmoid'(z3)
+`;
+    html += `      = ${error.toFixed(4)} × ${sigmoidDeriv(yhat).toFixed(4)}
+`;
+    html += `      = <span class="highlight">${d_out.toFixed(4)}</span>
+
+`;
+
+    html += `<span class="layer-label">Hidden Layer gradients:</span>
+`;
+    const d_h1 = d_out * v1 * sigmoidDeriv(h1);
+    const d_h2 = d_out * v2 * sigmoidDeriv(h2);
+    html += `d_h1 = d_out × v1 × sigmoid'(z1)
+`;
+    html += `     = ${d_out.toFixed(4)} × ${v1.toFixed(4)} × ${sigmoidDeriv(h1).toFixed(4)}
+`;
+    html += `     = <span class="highlight">${d_h1.toFixed(4)}</span>
+
+`;
+    html += `d_h2 = d_out × v2 × sigmoid'(z2)
+`;
+    html += `     = ${d_out.toFixed(4)} × ${v2.toFixed(4)} × ${sigmoidDeriv(h2).toFixed(4)}
+`;
+    html += `     = <span class="highlight">${d_h2.toFixed(4)}</span>
+
+`;
+
+    html += `<span class="layer-label">Weight updates:</span>
+`;
+    html += `v1 += ${eta} × ${d_out.toFixed(4)} × ${h1.toFixed(4)}
+`;
+    html += `v2 += ${eta} × ${d_out.toFixed(4)} × ${h2.toFixed(4)}
+`;
+    html += `W1[0] += ${eta} × ${d_h1.toFixed(4)} × [${sample.x.join(',')}]
+`;
+    html += `W1[1] += ${eta} × ${d_h2.toFixed(4)} × [${sample.x.join(',')}]`;
+  }
+
+  el.innerHTML = html;
+}
+
+function updateWeightsDisplay() {
+  const el = document.getElementById('weightsDisplay');
+  let html = '';
+  html += `<span class="layer-label">Hidden weights (W1):</span>
+`;
+  html += `h1: [${W1[0][0].toFixed(3)}, ${W1[0][1].toFixed(3)}, ${W1[0][2].toFixed(3)}]
+`;
+  html += `h2: [${W1[1][0].toFixed(3)}, ${W1[1][1].toFixed(3)}, ${W1[1][2].toFixed(3)}]
+
+`;
+  html += `<span class="layer-label">Output weights (W2):</span>
+`;
+  html += `out: [${v1.toFixed(3)}, ${v2.toFixed(3)}, ${b3.toFixed(3)}]
+
+`;
+  html += `<span class="layer-label">Epoch: ${epoch}</span>`;
+  el.innerHTML = html;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CONTROLS
+// ═══════════════════════════════════════════════════════════════
+
+let playInterval = null;
+
+function togglePlay() {
+  playing = !playing;
+  document.getElementById('btnPlay').textContent = playing ? '⏸ Pause' : '▶ Play';
+  document.getElementById('btnPlay').classList.toggle('active', playing);
+
+  if (playing) {
+    const speed = document.getElementById('speedSlider').value;
+    const ms = 1500 - speed * 130;
+    playInterval = setInterval(stepForward, ms);
+  } else {
+    clearInterval(playInterval);
+  }
+}
+
+function resetNetwork() {
+  initWeights();
+  currentSample = 0;
+  phaseIndex = 0;
+  animPhase = '';
+  h1 = 0; h2 = 0; yhat = 0; error = 0;
+  document.getElementById('epochCount').textContent = '0';
+  document.getElementById('mathDisplay').innerHTML = 'Network reset. Press Play or Step.';
+  updateWeightsDisplay();
+  draw();
+}
+
+function trainFull() {
+  for (let e = 0; e < 500; e++) {
+    for (let s = 0; s < 4; s++) {
+      forward(XOR[s]);
+      backward(XOR[s]);
+    }
+    epoch++;
+  }
+  currentSample = 0;
+  forward(XOR[0]);
+  document.getElementById('epochCount').textContent = epoch;
+  updateWeightsDisplay();
+  document.getElementById('mathDisplay').innerHTML = `Training complete: ${epoch} epochs.
+
+Final output for each input:
+`;
+  for (let s = 0; s < 4; s++) {
+    const r = forward(XOR[s]);
+    const pred = r.yhat > 0.5 ? 1 : 0;
+    const correct = pred === XOR[s].y ? '✓' : '✗';
+    document.getElementById('mathDisplay').innerHTML += 
+      `[${XOR[s].x[1]},${XOR[s].x[2]}] → ${r.yhat.toFixed(4)} → ${pred} (target: ${XOR[s].y}) ${correct}
+`;
+  }
+  draw();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════════════════════
+
+initWeights();
+updateWeightsDisplay();
+draw();
+</script>
+</body>
+</html>
