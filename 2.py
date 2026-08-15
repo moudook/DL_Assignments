@@ -7,7 +7,6 @@
 # import matplotlib
 # import numpy
 
-from socket import AF_DECnet
 
 import pandas as pd
 import numpy as np
@@ -37,23 +36,25 @@ print(df)
 print("🚸")
 
 print(df.head())
-df["new"]=1
+# df["new"]=1
 
-print(df)
+# print(df)
 # df.drop(new)
 # df.drop(columns=new, inplace=True)
 # df.drop('new',axis='columns')
 # assigning it to df gave the df update insted to sut operatio it ans nevesaving it
-df = df.drop('new',axis='columns')
+# df = df.drop('new',axis='columns')
+#i was just testing how it works so that is why i did added new then dropped it so
 
-print(df.head())
+# print(df.head())
 # df.add('new',axis='columns')
 # print(df.head())
 
 #adding column at specifc location
-df.insert(loc=0, column='x0',value=1)
+# df.insert(loc=0, column='x0',value=1)
+#this is useless opertio on big data better if we rather do it on the partitioned data then it needs less computation maybe
 
-print(df.head())
+# print(df.head())
 # this is the df now
 
 # now i know how to insert/drop a column at specific 'loc'ation with specific value
@@ -64,14 +65,16 @@ print(df.head())
 # data = pd.DataFrame[df['x1','x2']]
 #data = df['x1',''x2]
 #finally created a df that only have inputs
-data = df[['x0','x1','x2']]
+data = df[['x1','x2']]
+data.insert(loc=0, column='x0', value=1)
 
 print(data.head())
 # print(data)
 
 # its time to create label only dataframe
 label=df[['label']]
-print(label.head())
+# print(label.head())
+# print here just here for testiogn
 
 #separated the input and label
 # now i have to see the distrubution of the data using plots
@@ -87,7 +90,7 @@ data['x1'].max()
 
 # print(df['label'])
 
-print(data.head())
+# print(data.head())
 
 # the relevant comment about the plot
 # this plot shows that no classes is overlappable so that we can seprate or use a linear discriminator fucntion here
@@ -101,7 +104,7 @@ weights = [rdr(-2, 2), rdr(-2 ,2), rdr(-2,2)]
 
 # weights of 3 is created, the loop is the +algorithm:
 # this is the training iterations with a loop  i (epoch number) = 1..epoch, outer loop is epoch, inner while traverses the naive data
-# for each row: compute y = w * x, compare with label; if wrong, update weights, count the misses, and only the while ends reset the misclass count for the next epoch.
+# for each row: compute y = w * x, error with label; if wrong, update weights, count the misses, and only the while ends reset the misclass count for the next epoch.
 # inner loop uses while because we visit all rows; the for loop sets the number of epochs user defined.
 # plot this by now, codes are sequential and complete: import -> data -> train loops -> test prints -> plot
 
@@ -145,15 +148,15 @@ for i in range(1 ,epoch + 1 ):
         y = AF
 
         #y comparison
-        compare = label.iloc[count].label - y
+        error = label.iloc[count].label - y
         # use the . label Value as the dataset label (need .label here)
-        # compare is 0 if correct else -1/+1 (update needed)
+        # error is 0 if correct else -1/+1 (update needed)
 
-        if(compare != 0):
+        if(error != 0):
             #update weight vector toward the correct value
-            AFDash = B * AF * ( 1 - AF )
+            sigmoid_derivative = B * AF * ( 1 - AF )
             #activation fn differentiation
-            weights = weights + np.array( eta * compare * AFDash * data.iloc[count] )
+            weights = weights + np.array( eta * error * sigmoid_derivative * data.iloc[count] )
             # using vector + vector (each adds the features of the miss)
             misclass += 1
         count += 1
@@ -162,7 +165,7 @@ for i in range(1 ,epoch + 1 ):
 # HOW TO UPDATE THE WWIGTH MATEIX
 # (solved: np.dot in the loop + vector addition above)
 
-print("test")
+print("output weights")
 print(weights)
 
 inp = [1,2,3]
