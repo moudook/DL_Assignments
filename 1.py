@@ -7,6 +7,8 @@
 # import matplotlib
 # import numpy
 
+from socket import AF_DECnet
+
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -14,9 +16,12 @@ import matplotlib.pyplot as plt
 
 
 import math
-def ActivationFunction(y):
-            f = 1 / ( 1 + math.exp(  * y ))
-
+def ActivationFunction(y,B):
+    AF = 1 / ( 1 + math.exp( -1 * y * B ))
+    # sigmoid AF
+    # Suitable when output needs to be interpreted as probabilities
+    # saturation possibilities on large data becuase there is a constant -> f * ( 1 - f ) for big values it becomes close to zero so lead to saturation
+    return AF
 
 
 
@@ -99,12 +104,12 @@ weights = [rdr(-2, 2), rdr(-2 ,2), rdr(-2,2)]
 # inner loop uses while because we visit all rows; the for loop sets the number of epochs user defined.
 # plot this by now, codes are sequential and complete: import -> data -> train loops -> test prints -> plot
 
-epoch = 100
-B = 0.3
+epoch = 200
+B = 0.5
 #beta that is in the activation funciton
 #just defining epoch value
 
-for i in range(1,epoch+1):
+for i in range(1 ,epoch + 1 ):
     #defined number of epoches
     count = 0
     # initialize count = 0 to traverse the rows one by one
@@ -135,7 +140,8 @@ for i in range(1,epoch+1):
 
 
         #activation funciton
-        y = ActivationFunction(y,B)
+        AF = ActivationFunction(y,B)
+        y = AF
 
         #y comparison
         compare = label.iloc[count].label - y
@@ -144,7 +150,9 @@ for i in range(1,epoch+1):
 
         if(compare != 0):
             #update weight vector toward the correct value
-            weights = weights + np.array( eta * compare * data.iloc[count] )
+            AFDash = B * AF * ( 1 - AF )
+            #activation fn differentiation
+            weights = weights + np.array( eta * compare * AFDash * data.iloc[count] )
             # using vector + vector (each adds the features of the miss)
             misclass += 1
         count += 1
@@ -159,7 +167,7 @@ print(weights)
 inp = [1,2,3]
 
 prod = np.dot(weights,inp)
-if prod >0: # find the class and 1 else 0
+if prod > 0.5: # find the class and 1 else 0
     print(1)
 else:
     print(0)
