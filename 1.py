@@ -11,6 +11,19 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
+
+
+import math
+def ActivationFunction(y):
+            f = 1 / ( 1 + math.exp(  * y ))
+
+
+
+
+
+
+
+
 # code
 df = pd.read_csv("data.csv")
 
@@ -87,6 +100,8 @@ weights = [rdr(-2, 2), rdr(-2 ,2), rdr(-2,2)]
 # plot this by now, codes are sequential and complete: import -> data -> train loops -> test prints -> plot
 
 epoch = 100
+B = 0.3
+#beta that is in the activation funciton
 #just defining epoch value
 
 for i in range(1,epoch+1):
@@ -117,10 +132,10 @@ for i in range(1,epoch+1):
         #
         #
         # sigmoid AF
-        import math
-        f = 1 / ( 1 + math.exp( -0.5 * y ))
 
-        y = f
+
+        #activation funciton
+        y = ActivationFunction(y,B)
 
         #y comparison
         compare = label.iloc[count].label - y
