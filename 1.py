@@ -21,6 +21,7 @@ def ActivationFunction(y,B):
     # sigmoid AF
     # Suitable when output needs to be interpreted as probabilities
     # saturation possibilities on large data becuase there is a constant -> f * ( 1 - f ) for big values it becomes close to zero so lead to saturation
+    # may lead to higher deflection and saturaion and is not adaptive may cause issue if 3 concurrent vlaues are not almost linear
     return AF
 
 
@@ -105,7 +106,7 @@ weights = [rdr(-2, 2), rdr(-2 ,2), rdr(-2,2)]
 # plot this by now, codes are sequential and complete: import -> data -> train loops -> test prints -> plot
 
 epoch = 200
-B = 0.5
+B = 0.7
 #beta that is in the activation funciton
 #just defining epoch value
 
