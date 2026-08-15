@@ -86,7 +86,7 @@ label=df[['label']]
 # plt.show()
 # plot end
 
-data['x1'].max()
+# data['x1'].max()
 
 # print(df['label'])
 
@@ -176,7 +176,7 @@ if prod > 0.5: # find the class and 1 else 0
 else:
     print(0)
 
-print(type(weights))
+# print(type(weights))
 
 # test plot it now
 line = (-1) * (weights[1]* df['x1'] + weights[0])/weights[2]
@@ -185,6 +185,4 @@ plt.scatter(df['x1'],df['x2'],c=df['label'])
 plt.plot(df['x1'],line,c='red')
 plt.xlabel("x1")
 plt.ylabel("y1")
-
-plt.plot()
 plt.show()
