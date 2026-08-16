@@ -1,0 +1,1 @@
+Don't forget to make a folder named 'data' and extract the data inside it, ideally don't commit the data and don't play around with the structure and path too much

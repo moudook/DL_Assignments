@@ -1,2 +1,19 @@
+# ── Datasets (large files, not tracked) ──────────────────────────
+!**/data/README.md
 data/
+
+# ── Submission zips ───────────────────────────────────────────────
 *.zip
+
+# ── Python artifacts ──────────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# ── Generated outputs (ignore scratch, commit final plots manually)
+Assignment*/outputs/
+
+# ── OS junk ───────────────────────────────────────────────────────
+.DS_Store
