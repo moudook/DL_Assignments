@@ -81,12 +81,16 @@ class Perceptron:
         out : (n_samples,)  — post-activation, NOT thresholded
         """
 
-    def gradient(self, X: np.ndarray, error: np.ndarray) -> tuple[np.ndarray, float]:
+    def gradient(self, X: np.ndarray, y: np.ndarray, output: np.ndarray) -> tuple[np.ndarray, float]:
         """
-        Computes weight and bias gradients given pre-computed error.
-        error = (y_target - output), shape (n_samples,)
+        Computes weight and bias gradients given the forward output.
+        y      : (n_samples,)  — true targets
+        output : (n_samples,)  — result of forward(X), passed in explicitly
 
-        Internally calls activation_derivative(output) to get delta.
+        delta  = (output - y) * activation_derivative(output)
+        grad_w = X.T @ delta / n
+        grad_b = delta.mean()
+
         Returns:
             grad_w : (n_features,)
             grad_b : float
@@ -131,32 +135,31 @@ class GradientDescent:
         X: np.ndarray,
         y: np.ndarray,
         epochs: int = 100
-    ) -> tuple[list[float], list[float]]:
+    ) -> list[float]:
         """
         Full-batch gradient descent. Updates model.weights and model.bias in-place.
 
         Each epoch:
-            output       = model.forward(X)
-            error        = y - output                    # (n_samples,)
-            grad_w, gb   = model.gradient(X, error)     # delegate to model
-            model.weights += lr * grad_w
-            model.bias    += lr * grad_b
+            output         = model.forward(X)
+            grad_w, grad_b = model.gradient(X, y, output)   # delegate to model
+            model.weights -= lr * grad_w
+            model.bias    -= lr * grad_b
 
-        Vectorised gradient: X.T @ (delta) / n   — no Python loops over samples.
+        Vectorised — no Python loops over samples.
 
         Returns:
             mse_history : list[float]  — mean((y - output)²) per epoch
-            acc_history : list[float]  — misclassification rate per epoch
-                                         (None for regression tasks — return empty list)
+
+        Classification metrics (accuracy, precision, recall) are computed
+        separately after training using shared/metrics/classification.py.
         """
 ```
 
 > **Rationale (Q3):** Full-batch is the standard interpretation of "gradient descent" (SGD is named
 > explicitly in literature). Vectorised `X.T @ delta / n` is both faster and mathematically clear.
 
-> **Rationale (Q4):** Returns both MSE and misclassification rate for classification tasks. MSE
-> alone is hard to interpret pedagogically for a classifier; accuracy alongside it makes the
-> training curves informative. Regression tasks return empty list for acc_history.
+> **Rationale (Q4):** Optimizer returns only MSE — it is an optimiser, not an evaluator.
+> Classification metrics belong in dedicated evaluation functions called after training.
 
 ---
 
@@ -177,7 +180,7 @@ class OneAgainstOne:
         y: np.ndarray,            # labels {0, 1, ..., n_classes-1}
         optimizer: GradientDescent,
         epochs: int = 100
-    ) -> dict[tuple[int,int], tuple[list, list]]:
+    ) -> dict[tuple[int,int], list[float]]:
         """
         For each pair (i, j):
           1. Filter X, y to only samples from class i and class j.
@@ -185,7 +188,7 @@ class OneAgainstOne:
              (0/1 for sigmoid, -1/+1 for tanh — determined by classifier's activation).
           3. Call optimizer.fit(classifier, X_pair, y_pair, epochs).
 
-        Returns dict of {(i,j): (mse_history, acc_history)} for plotting error curves.
+        Returns dict of {(i,j): mse_history} for plotting per-pair error curves.
         """
 
     def predict(self, X: np.ndarray) -> np.ndarray:
@@ -198,6 +201,15 @@ class OneAgainstOne:
         (Deterministic, documented, simple.)
 
         Returns: (n_samples,) — predicted class labels {0, 1, ..., n_classes-1}
+        """
+
+    def predict_pair(self, X: np.ndarray, pair: tuple[int, int]) -> np.ndarray:
+        """
+        Evaluates X using only the sub-classifier for class pair (i, j).
+        Used for plotting pairwise decision boundaries as required by the assignment.
+
+        pair : (i, j) with i < j
+        Returns: (n_samples,) — binary predictions in the classifier's encoding
         """
 ```
 
@@ -213,8 +225,9 @@ class OneAgainstOne:
 | `data_loader` | `load_bivariate_data(file)` | path → `(X: n×2, y: n)` |
 | `shared/utils` | `train_test_split(X, y, ratio)` | arrays → 4 arrays |
 | `Perceptron` | `forward(X)` | `(n,d)` → `(n,)` raw output |
-| `Perceptron` | `gradient(X, error)` | arrays → `(grad_w, grad_b)` |
+| `Perceptron` | `gradient(X, y, output)` | arrays → `(grad_w, grad_b)` |
 | `Perceptron` | `predict(X)` | `(n,d)` → `(n,)` decisions |
-| `GradientDescent` | `fit(model, X, y, epochs)` | — → `(mse_hist, acc_hist)` |
-| `OneAgainstOne` | `fit(X, y, optimizer, epochs)` | — → `{pair: (mse, acc)}` |
+| `GradientDescent` | `fit(model, X, y, epochs)` | — → `mse_hist` |
+| `OneAgainstOne` | `fit(X, y, optimizer, epochs)` | — → `{pair: mse_hist}` |
 | `OneAgainstOne` | `predict(X)` | `(n,d)` → `(n,)` class labels |
+| `OneAgainstOne` | `predict_pair(X, pair)` | `(n,d)` + pair → `(n,)` binary |
