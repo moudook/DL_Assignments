@@ -2,7 +2,7 @@ from models.perceptron import Perceptron
 import numpy as np
 from optimizers.gradient_descent import GradientDescent
 
-VALID_ACTIVATIONS = {'sigmoid', 'tanh'}
+VALID_ACTIVATIONS = ['sigmoid', 'tanh']
 
 class OneAgainstOne:
     def __init__(self, n_classes:int, n_features:int, activation: str='sigmoid'):
