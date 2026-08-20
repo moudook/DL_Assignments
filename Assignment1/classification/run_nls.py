@@ -1,5 +1,6 @@
 import sys
 import os
+import numpy as np
 assignment1_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(assignment1_dir)
 repo_root = os.path.dirname(assignment1_dir)
@@ -11,11 +12,12 @@ from optimizers.gradient_descent import GradientDescent
 from shared.utils.data import train_test_split
 from shared.metrics.classificiation import *
 from shared.utils.plotting import plot_error_curves, plot_decision_regions
+np.random.seed(42)
 
 DATA_PATH = "data/Group11/Classification/NLS_Group11.txt"
 X, y = load_nls_data(DATA_PATH)
 
-X_train, X_test, y_train, y_test = train_test_split(X, y)
+X_train, X_test, y_train, y_test = train_test_split(X, y, stratify=True)
 
 print("X_train shape:", X_train.shape)
 print("X_test shape:", X_test.shape)

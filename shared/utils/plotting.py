@@ -3,11 +3,17 @@ import numpy as np
 import os
 from matplotlib.colors import ListedColormap
 import itertools
+from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
 
-def plot_error_curves(histories: dict, title: str, save_path: str = None):
+def plot_error_curves(histories, title: str, save_path: str = None):
+    """histories: dict[(i,j) -> list] for classification, or plain list for regression."""
     plt.figure(figsize=(8, 5))
-    for (i, j), mse in histories.items():
-        plt.plot(mse, label=f'Class {i} vs {j}')
+    if isinstance(histories, dict):
+        for key, mse in histories.items():
+            label = f'Class {key[0]} vs {key[1]}' if isinstance(key, tuple) else str(key)
+            plt.plot(mse, label=label)
+    else:
+        plt.plot(histories, label='Training MSE')
     plt.xlabel('Epoch')
     plt.ylabel('Mean Squared Error')
     plt.title(title)
@@ -86,3 +92,64 @@ def plot_decision_regions(model, X: np.ndarray, y: np.ndarray,
         plt.savefig(save_path, dpi=150, bbox_inches='tight')
     
     plt.close()
+
+def plot_regression_univariate(X: np.ndarray, y_true: np.ndarray, y_pred: np.ndarray,
+                                title: str, save_path: str = None):
+    x_vals = X.ravel()
+    sort_idx = np.argsort(x_vals)
+
+    plt.figure(figsize=(8, 5))
+    plt.scatter(x_vals, y_true, s=15, alpha=0.5, label='Actual', color='steelblue')
+    plt.plot(x_vals[sort_idx], y_pred[sort_idx], color='crimson',
+             linewidth=2, label='Model output')
+    plt.xlabel('X')
+    plt.ylabel('y')
+    plt.title(title)
+    plt.legend()
+    plt.tight_layout()
+    if save_path:
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        plt.savefig(save_path, dpi=150, bbox_inches='tight')
+    plt.close()
+
+
+def plot_regression_bivariate(model, X: np.ndarray, y_true: np.ndarray,
+                               title: str, save_path: str = None):
+    x1 = np.linspace(X[:, 0].min(), X[:, 0].max(), 50)
+    x2 = np.linspace(X[:, 1].min(), X[:, 1].max(), 50)
+    xx1, xx2 = np.meshgrid(x1, x2)
+    grid = np.c_[xx1.ravel(), xx2.ravel()]
+    zz = model.predict(grid).reshape(xx1.shape)
+
+    fig = plt.figure(figsize=(10, 7))
+    ax = fig.add_subplot(111, projection='3d')
+    ax.plot_surface(xx1, xx2, zz, alpha=0.4, color='orange', label='Model surface')
+    ax.scatter(X[:, 0], X[:, 1], y_true, color='steelblue', s=10, alpha=0.6)
+    ax.set_xlabel('X1')
+    ax.set_ylabel('X2')
+    ax.set_zlabel('y')
+    ax.set_title(title)
+    plt.tight_layout()
+    if save_path:
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        plt.savefig(save_path, dpi=150, bbox_inches='tight')
+    plt.close()
+
+
+def plot_scatter_target_vs_output(y_true: np.ndarray, y_pred: np.ndarray,
+                                   title: str, save_path: str = None):
+    """Scatter plot with target on x-axis and model output on y-axis."""
+    plt.figure(figsize=(6, 6))
+    plt.scatter(y_true, y_pred, s=15, alpha=0.5, color='steelblue')
+    lims = [min(y_true.min(), y_pred.min()), max(y_true.max(), y_pred.max())]
+    plt.plot(lims, lims, 'r--', linewidth=1.5, label='Perfect prediction (y=x)')
+    plt.xlabel('Target (y_true)')
+    plt.ylabel('Model output (y_pred)')
+    plt.title(title)
+    plt.legend()
+    plt.tight_layout()
+    if save_path:
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        plt.savefig(save_path, dpi=150, bbox_inches='tight')
+    plt.close()
+
