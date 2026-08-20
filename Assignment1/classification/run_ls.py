@@ -10,6 +10,7 @@ from models.one_vs_one import OneAgainstOne
 from optimizers.gradient_descent import GradientDescent
 from shared.utils.data import train_test_split
 from shared.metrics.classificiation import *
+from shared.utils.plotting import plot_error_curves, plot_decision_regions
 
 DATA_DIR = "data/Group11/Classification/LS_Group11"
 X, y = load_ls_data(DATA_DIR)
@@ -36,6 +37,11 @@ print("Mean Precision: ", logisitc_summary["precisions"].mean())
 print("Mean Recall: ", logisitc_summary["recalls"].mean())
 print("Mean F1 Score: ", logisitc_summary["f1_scores"].mean())
 print("\n")
+plot_error_curves(logistic_histories, "Perceptron with Logisitc activation function", "outputs/ls/error_curves_logistic.png")
+plot_decision_regions(logisitc_model, X_train, y_train, "Perceptron with Logisitc activation function", save_path="outputs/ls/decision_regions_logistic.png")
+
+for pair in [(0,1), (0,2), (1,2)]:
+    plot_decision_regions(logisitc_model, X_train, y_train, "Perceptron with Logisitc activation function", save_path=f"outputs/ls/decision_regions_logistic_{pair}.png", pair=pair)
 
 tanh_model = OneAgainstOne(3, 2, activation='tanh')
 tanh_histories = tanh_model.fit(X_train, y_train, optimizer=GradientDescent(lr=0.01), epochs=100)
@@ -51,4 +57,9 @@ print("Confusion matrix:\n", tanh_summary["confusion_matrix"])
 print("Mean Precision: ", tanh_summary["precisions"].mean())
 print("Mean Recall: ", tanh_summary["recalls"].mean())
 print("Mean F1 Score: ", tanh_summary["f1_scores"].mean())
+plot_error_curves(tanh_histories, "Perceptron with Tan hyperbolic activation function", "outputs/ls/error_curves_tanh.png")
+plot_decision_regions(tanh_model, X_train, y_train, "Perceptron with Tan hyperbolic activation function", save_path="outputs/ls/decision_regions_tanh.png")
 
+
+for pair in [(0,1), (0,2), (1,2)]:
+    plot_decision_regions(tanh_model, X_train, y_train, "Perceptron with Tan hyperbolic activation function", save_path=f"outputs/ls/decision_regions_tanh_{pair}.png", pair=pair)
