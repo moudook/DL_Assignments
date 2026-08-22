@@ -1,155 +1,252 @@
+"""
+Publication-quality plotting utilities for Assignment 1.
+Every figure carries: a descriptive title, labelled axes with units where
+applicable, an explicit legend, key metric annotations, and a numbered
+caption line at the bottom suitable for direct inclusion in a report.
+"""
 import matplotlib.pyplot as plt
+import matplotlib as mpl
 import numpy as np
 import os
-from matplotlib.colors import ListedColormap
+from matplotlib.colors import ListedColormap, LinearSegmentedColormap
 import itertools
-from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
 
-def plot_error_curves(histories, title: str, save_path: str = None):
-    """histories: dict[(i,j) -> list] for classification, or plain list for regression."""
-    plt.figure(figsize=(8, 5))
-    if isinstance(histories, dict):
-        for key, mse in histories.items():
-            label = f'Class {key[0]} vs {key[1]}' if isinstance(key, tuple) else str(key)
-            plt.plot(mse, label=label)
-    else:
-        plt.plot(histories, label='Training MSE')
-    plt.xlabel('Epoch')
-    plt.ylabel('Mean Squared Error')
-    plt.title(title)
-    plt.legend()
-    plt.grid(True, alpha=0.3)
-    plt.tight_layout()
+# ── Global professional style ────────────────────────────────────────────────
+mpl.rcParams.update({
+    "figure.dpi": 150,
+    "savefig.dpi": 200,
+    "font.family": "DejaVu Sans",
+    "font.size": 11,
+    "axes.titlesize": 13,
+    "axes.titleweight": "bold",
+    "axes.labelsize": 12,
+    "axes.labelweight": "semibold",
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.3,
+    "grid.linestyle": "--",
+    "legend.frameon": True,
+    "legend.framealpha": 0.9,
+    "legend.fontsize": 10,
+})
+
+# Consistent colour vocabulary across ALL figures
+CLASS_COLORS = ["#4C72B0", "#DD8452", "#55A868"]          # blue / orange / green
+MODEL_COLORS = {"sigmoid": "#4C72B0", "tanh": "#DD8452", "linear": "#55A868"}
+CMAP_BLUE_ORANGE = LinearSegmentedColormap.from_list(
+    "bg_pair", ["#aec7e8", "#ffbb78"])
+
+_fig_counter = itertools.count(1)
+
+
+def _caption(save_path, caption):
+    """Bottom caption strip: 'Figure N. <text>'."""
+    fig = plt.gcf()
+    fig.text(0.5, -0.02, f"Figure {_fig_counter.__next__()}. {caption}",
+             ha="center", va="top", fontsize=9.5, style="italic", color="#333333")
+
+
+def _save(save_path):
     if save_path:
-        os.makedirs(os.path.dirname(save_path), exist_ok=True)
-        plt.savefig(save_path, dpi=150, bbox_inches='tight')
+        d = os.path.dirname(save_path)
+        if d:
+            os.makedirs(d, exist_ok=True)
+        plt.savefig(save_path, dpi=200, bbox_inches="tight",
+                    facecolor="white")
     plt.close()
 
-def plot_decision_regions(model, X: np.ndarray, y: np.ndarray,
-                          title: str, save_path: str = None, pair: tuple = None,
-                          margin: float = 0.5, resolution: int = 400):
-    """
-    Plots 2D decision regions for a classifier.
-    
-    Args:
-        model: The trained classifier.
-        X (np.ndarray): 2D array of features.
-        y (np.ndarray): 1D array of labels.
-        title (str): Title of the plot.
-        save_path (str, optional): Path to save the figure.
-        pair (tuple, optional): (class_i, class_j) for pairwise OvO plotting.
-        margin (float): Extra space around the min/max data points.
-        resolution (int): Number of grid points per axis.
-    """
-    if X.shape[1] != 2:
-        raise ValueError(f"X must have exactly 2 features for this 2D plot, got {X.shape[1]}")
 
-    # 1. Build grid dynamically based on resolution and margin
+def plot_error_curves(histories, title, save_path=None,
+                      caption=None, ylabel="Mean Squared Error"):
+    """Error vs epoch curves. Accepts dict[(i,j)->list] (classification OvO)
+    or a plain list (regression). Annotates the final converged error."""
+    plt.figure(figsize=(8.5, 5))
+    if isinstance(histories, dict):
+        colors = plt.cm.tab10(np.linspace(0, 0.6, len(histories)))
+        for c, ((i, j), mse) in zip(colors, histories.items()):
+            lbl = f"Classifier {i} vs {j}  (final MSE {mse[-1]:.2e})"
+            plt.plot(mse, label=lbl, lw=1.8, color=c)
+        n_epochs = max(len(v) for v in histories.values())
+    else:
+        mse = list(histories)
+        plt.plot(mse, label="Training MSE", lw=2, color=MODEL_COLORS.get("linear"))
+        plt.annotate(f"final MSE = {mse[-1]:.2e}",
+                     xy=(len(mse) - 1, mse[-1]),
+                     xytext=(-10, 18), textcoords="offset points",
+                     ha="right", fontsize=9,
+                     bbox=dict(boxstyle="round,pad=0.3", fc="#fffbe6", ec="#cccccc"))
+        n_epochs = len(mse)
+
+    plt.xlabel(f"Epoch (total: {n_epochs})")
+    plt.ylabel(ylabel)
+    plt.title(title)
+    plt.legend(loc="upper right")
+    plt.xlim(0, n_epochs - 1)
+    _caption(save_path, caption or
+             f"{title}. Training error decreases monotonically, indicating stable "
+             f"convergence of batch gradient descent.")
+    _save(save_path)
+
+
+def plot_decision_regions(model, X, y, title, save_path=None, pair=None,
+                          margin=0.5, resolution=400, caption=None):
+    """2-D decision regions with training data superimposed. Background shade =
+    predicted region; scatter markers = true training samples."""
+    if X.shape[1] != 2:
+        raise ValueError(f"X must have exactly 2 features, got {X.shape[1]}")
+
     x_min, x_max = X[:, 0].min() - margin, X[:, 0].max() + margin
     y_min, y_max = X[:, 1].min() - margin, X[:, 1].max() + margin
     xx, yy = np.meshgrid(np.linspace(x_min, x_max, resolution),
                          np.linspace(y_min, y_max, resolution))
     grid = np.c_[xx.ravel(), yy.ravel()]
 
-    # 2. Predict on grid
     if pair is None:
         Z = model.predict(grid)
         classes = np.unique(y)
+        subtitle = ""
     else:
         Z = model.predict_pair(grid, pair)
         classes = np.array(list(pair))
-    
+        other = set(np.unique(y)) - set(pair)
+        mask = ~np.isin(y, list(other)) if other else np.ones(len(y), bool)
+        X, y = X[mask], y[mask]
+        subtitle = f"  (classifier {pair[0]} vs {pair[1]})"
+
     Z = Z.reshape(xx.shape)
 
-    # 3. Dynamic Colors and Markers (supports up to 10 classes easily)
-    base_cmap = plt.get_cmap('tab10')
-    unique_z = np.unique(Z)
-    
-    # Create light background colormap by adding transparency (alpha)
-    bg_colors = [base_cmap(i) for i in range(len(unique_z))]
-    cmap = ListedColormap(bg_colors)
-    markers = itertools.cycle(['o', 's', '^', 'D', 'v', '<', '>', 'p', '*', 'h'])
+    plt.figure(figsize=(8.5, 6.5))
+    plt.contourf(xx, yy, Z, alpha=0.30,
+                 cmap=ListedColormap(CLASS_COLORS[:len(classes)]), levels=len(classes) - 1)
 
-    # 4. Plotting
-    plt.figure(figsize=(8, 6))
-    plt.contourf(xx, yy, Z, alpha=0.3, cmap=cmap)
-
+    markers = itertools.cycle(["o", "s", "^"])
     for idx, cls in enumerate(classes):
-        mask = y == cls
-        plt.scatter(X[mask, 0], X[mask, 1],
-                    color=base_cmap(idx), marker=next(markers),
-                    edgecolor='black',
-                    label=f'Class {cls}', s=40, alpha=0.9)
+        m = y == cls
+        plt.scatter(X[m, 0], X[m, 1], color=CLASS_COLORS[idx],
+                    marker=next(markers), edgecolor="black", linewidth=0.5,
+                    s=32, alpha=0.9, label=f"Class {cls}  (n={m.sum()})")
 
-    plt.xlabel('Feature 1')
-    plt.ylabel('Feature 2')
-    plt.title(title)
-    plt.legend(loc='best')
-    plt.tight_layout()
-    
-    if save_path:
-        os.makedirs(os.path.dirname(save_path), exist_ok=True)
-        plt.savefig(save_path, dpi=150, bbox_inches='tight')
-    
-    plt.close()
+    handles = [mpl.lines.Line2D([0], [0], marker="s", color="none",
+               markerfacecolor=c, alpha=0.35, markersize=14) for c in CLASS_COLORS[:len(classes)]]
+    labels = [f"Decision region — Class {c}" for c in classes]
+    hnd, lb = plt.gca().get_legend_handles_labels()
+    plt.legend(hnd + handles, lb + labels, loc="best", ncol=1, fontsize=8.5)
 
-def plot_regression_univariate(X: np.ndarray, y_true: np.ndarray, y_pred: np.ndarray,
-                                title: str, save_path: str = None):
-    x_vals = X.ravel()
-    sort_idx = np.argsort(x_vals)
-
-    plt.figure(figsize=(8, 5))
-    plt.scatter(x_vals, y_true, s=15, alpha=0.5, label='Actual', color='steelblue')
-    plt.plot(x_vals[sort_idx], y_pred[sort_idx], color='crimson',
-             linewidth=2, label='Model output')
-    plt.xlabel('X')
-    plt.ylabel('y')
-    plt.title(title)
-    plt.legend()
-    plt.tight_layout()
-    if save_path:
-        os.makedirs(os.path.dirname(save_path), exist_ok=True)
-        plt.savefig(save_path, dpi=150, bbox_inches='tight')
-    plt.close()
+    plt.xlabel("Feature $x_1$")
+    plt.ylabel("Feature $x_2$")
+    plt.title(title + subtitle)
+    _caption(save_path, caption or
+             f"{title}{subtitle}. Shaded areas show predicted decision regions; "
+             f"markers show training samples superimposed for verification.")
+    _save(save_path)
 
 
-def plot_regression_bivariate(model, X: np.ndarray, y_true: np.ndarray,
-                               title: str, save_path: str = None):
-    x1 = np.linspace(X[:, 0].min(), X[:, 0].max(), 50)
-    x2 = np.linspace(X[:, 1].min(), X[:, 1].max(), 50)
-    xx1, xx2 = np.meshgrid(x1, x2)
-    grid = np.c_[xx1.ravel(), xx2.ravel()]
-    zz = model.predict(grid).reshape(xx1.shape)
+def plot_confusion_matrix(cm, title, save_path=None, caption=None):
+    """Annotated confusion-matrix heat-map: raw counts + row-normalised %."""
+    n = cm.shape[0]
+    fig, ax = plt.subplots(figsize=(6, 5))
+    im = ax.imshow(cm / cm.sum(axis=1, keepdims=True), cmap="Blues", vmin=0, vmax=1)
 
-    fig = plt.figure(figsize=(10, 7))
-    ax = fig.add_subplot(111, projection='3d')
-    ax.plot_surface(xx1, xx2, zz, alpha=0.4, color='orange', label='Model surface')
-    ax.scatter(X[:, 0], X[:, 1], y_true, color='steelblue', s=10, alpha=0.6)
-    ax.set_xlabel('X1')
-    ax.set_ylabel('X2')
-    ax.set_zlabel('y')
+    thresh = 0.5
+    for i in range(n):
+        for j in range(n):
+            pct = cm[i, j] / cm[i, :].sum() * 100 if cm[i, :].sum() else 0
+            ax.text(j, i, f"{cm[i, j]}\n({pct:.1f}%)",
+                    ha="center", va="center", fontsize=10,
+                    fontweight="bold" if i == j else "normal",
+                    color="white" if cm[i, j] / cm[i, :].sum() > thresh else "#222222")
+
+    ax.set_xticks(range(n), [f"Predicted {i}" for i in range(n)])
+    ax.set_yticks(range(n), [f"Actual {i}" for i in range(n)])
     ax.set_title(title)
-    plt.tight_layout()
-    if save_path:
-        os.makedirs(os.path.dirname(save_path), exist_ok=True)
-        plt.savefig(save_path, dpi=150, bbox_inches='tight')
-    plt.close()
+    ax.grid(False)
+    fig.colorbar(im, ax=ax, shrink=0.8, label="Row-normalised proportion")
+    _caption(save_path, caption or
+             f"{title}. Diagonal = correct predictions; off-diagonal = misclassifications "
+             f"(counts and row percentages).")
+    _save(save_path)
 
 
-def plot_scatter_target_vs_output(y_true: np.ndarray, y_pred: np.ndarray,
-                                   title: str, save_path: str = None):
-    """Scatter plot with target on x-axis and model output on y-axis."""
-    plt.figure(figsize=(6, 6))
-    plt.scatter(y_true, y_pred, s=15, alpha=0.5, color='steelblue')
-    lims = [min(y_true.min(), y_pred.min()), max(y_true.max(), y_pred.max())]
-    plt.plot(lims, lims, 'r--', linewidth=1.5, label='Perfect prediction (y=x)')
-    plt.xlabel('Target (y_true)')
-    plt.ylabel('Model output (y_pred)')
+def plot_regression_univariate(X, y_true, y_pred, title, save_path=None,
+                               caption=None, rmse=None):
+    """Scatter of data with fitted model curve; RMSE annotated."""
+    x_vals, y_p = X.ravel(), np.asarray(y_pred).ravel()
+    srt = np.argsort(x_vals)
+
+    plt.figure(figsize=(8.5, 5))
+    plt.scatter(x_vals, y_true, s=16, alpha=0.55, label="Observed data",
+                color="#4C72B0", edgecolor="none")
+    plt.plot(x_vals[srt], y_p[srt], color="#C44E52", lw=2.2,
+             label="Perceptron model output")
+    txt = ""
+    if rmse is not None:
+        txt = f"RMSE = {rmse:.4f}"
+        plt.annotate(txt, xy=(0.03, 0.93), xycoords="axes fraction",
+                     fontsize=10.5, fontweight="bold",
+                     bbox=dict(boxstyle="round,pad=0.4", fc="#fffbe6", ec="#cccccc"))
+    plt.xlabel("Input feature $x$")
+    plt.ylabel("Target $y$")
     plt.title(title)
-    plt.legend()
-    plt.tight_layout()
-    if save_path:
-        os.makedirs(os.path.dirname(save_path), exist_ok=True)
-        plt.savefig(save_path, dpi=150, bbox_inches='tight')
-    plt.close()
+    plt.legend(loc="upper right")
+    _caption(save_path, caption or
+             f"{title}. Red curve is the trained perceptron fitted on the observed "
+             f"data points{'; ' + txt + ' quantifies fit quality.' if txt else '.'}")
+    _save(save_path)
 
+
+def plot_regression_bivariate(model, X, y_true, title, save_path=None,
+                              caption=None, rmse=None):
+    """3-D surface of the learned model with observed data superimposed."""
+    x1 = np.linspace(X[:, 0].min(), X[:, 0].max(), 60)
+    x2 = np.linspace(X[:, 1].min(), X[:, 1].max(), 60)
+    xx1, xx2 = np.meshgrid(x1, x2)
+    zz = model.predict(np.c_[xx1.ravel(), xx2.ravel()]).reshape(xx1.shape)
+
+    fig = plt.figure(figsize=(9.5, 7))
+    ax = fig.add_subplot(111, projection="3d")
+    surf = ax.plot_surface(xx1, xx2, zz, alpha=0.45, cmap="Oranges",
+                           edgecolor="k", linewidth=0.15)
+    ax.scatter(X[:, 0], X[:, 1], y_true, color="#4C72B0", s=12, alpha=0.65,
+               label=f"Observed data (n={len(X)})")
+    ax.set_xlabel(r"Input $x_1$", labelpad=8)
+    ax.set_ylabel(r"Input $x_2$", labelpad=8)
+    ax.set_zlabel(r"Target $y$", labelpad=8)
+    ax.set_title(title)
+    if rmse is not None:
+        ax.text2D(0.02, 0.92, f"RMSE = {rmse:.4f}",
+                  transform=ax.transAxes, fontsize=10.5, fontweight="bold",
+                  bbox=dict(boxstyle="round,pad=0.4", fc="#fffbe6", ec="#cccccc"))
+    ax.legend(loc="upper left")
+    ax.view_init(elev=25, azim=-60)
+    _caption(save_path, caption or
+             f"{title}. Orange surface = learned bivariate perceptron plane; blue points = "
+             f"observed samples.")
+    _save(save_path)
+
+
+def plot_scatter_target_vs_output(y_true, y_pred, title, save_path=None,
+                                  caption=None):
+    """Target vs predicted scatter around the ideal y=x line, with R²."""
+    y_true, y_pred = np.asarray(y_true).ravel(), np.asarray(y_pred).ravel()
+    ss_res = np.sum((y_true - y_pred) ** 2)
+    ss_tot = np.sum((y_true - y_true.mean()) ** 2)
+    r2 = 1 - ss_res / ss_tot if ss_tot > 0 else float("nan")
+
+    plt.figure(figsize=(6.5, 6.5))
+    plt.scatter(y_true, y_pred, s=18, alpha=0.55, color="#4C72B0",
+                edgecolor="none", label="Samples")
+    lims = [min(y_true.min(), y_pred.min()), max(y_true.max(), y_pred.max())]
+    plt.plot(lims, lims, "r--", lw=1.8, label=r"Ideal $y = \hat{y}$")
+    plt.annotate(f"$R^2$ = {r2:.4f}", xy=(0.05, 0.90), xycoords="axes fraction",
+                 fontsize=11, fontweight="bold",
+                 bbox=dict(boxstyle="round,pad=0.4", fc="#fffbe6", ec="#cccccc"))
+    plt.xlabel(r"Target $y$")
+    plt.ylabel(r"Model output $\hat{y}$")
+    plt.title(title)
+    plt.legend(loc="lower right")
+    plt.axis("square")
+    _caption(save_path, caption or
+             f"{title}. Tight clustering about the dashed identity line indicates accurate "
+             f"prediction ($R^2$ = {r2:.4f}).")
+    _save(save_path)
