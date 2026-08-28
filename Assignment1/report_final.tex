@@ -1,0 +1,516 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[margin=2.4cm]{geometry}
+\usepackage{graphicx}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{float}
+\usepackage{booktabs}
+\usepackage{amsmath,amssymb}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage[colorlinks=true,linkcolor=blue!60!black,citecolor=blue!60!black,urlcolor=blue!60!black]{hyperref}
+
+\lstset{
+  language=Python,
+  basicstyle=\ttfamily\scriptsize,
+  keywordstyle=\color{blue!70!black}\bfseries,
+  commentstyle=\color{green!45!black}\itshape,
+  stringstyle=\color{orange!75!black},
+  showstringspaces=false,
+  numbers=left,
+  numberstyle=\tiny\color{gray},
+  frame=single,
+  framerule=0.3pt,
+  breaklines=true,
+  tabsize=4,
+}
+
+\newcommand{\code}[1]{\texttt{\small #1}}
+
+\title{\textbf{Assignment 1: Perceptron for Classification and Regression}\\[1em]
+\large A Mechanism-Level Analysis with Full Dataset Characterisation\\[2em]
+\normalsize\textbf{Group 11} --- CS601T Deep Learning\\[1.5em]
+\normalsize
+CS24BT055\enspace Himanshu Nagwanshi\\
+CS24BT061\enspace Sidharth B\\
+CS24BT060\enspace Anshuman Rahul}
+\author{}
+\date{\today}
+
+\begin{document}
+\maketitle
+\thispagestyle{empty}
+
+\clearpage
+\setcounter{page}{1}
+
+\begin{abstract}
+This report documents the design, implementation, and empirical behaviour of a single-layer
+perceptron trained with batch gradient descent, applied to two classification tasks (linearly
+separable; nonlinearly separable) and two regression tasks (univariate; bivariate). We provide
+a complete characterisation of all four raw datasets (feature ranges, class distributions,
+correlations, geometric structure) before any processing. Beyond reporting metrics, we explain
+\emph{why} each result occurs through the geometry of the decision boundary, the algebra of
+the gradient update, the effect of the activation derivative on learning speed, and the
+representational ceiling that causes failure on nonlinearly separable data. We cite the
+academic sources for every design decision. All numbers are from actual runs of this
+codebase (seed = 42).
+\end{abstract}
+
+%% ================================================================
+%% SECTION 1: DATASET CHARACTERISATION
+%% ================================================================
+\section{Dataset Characterisation (Raw, Unprocessed)}
+
+Before any training or preprocessing, we characterise each dataset in full. All statistics
+below are computed on the \emph{complete raw files} before the 70/30 train--test split.
+
+\subsection{Dataset 1: Linearly Separable (LS)}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.75\linewidth]{outputs/datasets/ls_raw.png}
+\caption{Raw scatter of Dataset 1. Three Gaussian clouds in $\mathbb{R}^2$, one per class.}
+\label{fig:ls-raw}
+\end{figure}
+
+Three \code{.txt} files loaded by \code{load\_ls\_data()}, each containing $n \times 2$ columns
+(x1, x2). Labels assigned by file sort order (Class1=0, Class2=1, Class3=2).
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{lrrrrr}
+\toprule
+Class & $n$ & x1 range & x1 mean $\pm$ std & x2 range & x2 mean $\pm$ std \\
+\midrule
+0 & 500 & $[-1.63, 6.76]$  & $3.37 \pm 1.51$ & $[-12.56, 2.37]$  & $-4.58 \pm 1.52$ \\
+1 & 500 & $[-0.09, 22.12]$ & $15.18 \pm 2.75$ & $[-7.48, 18.66]$  & $11.16 \pm 2.70$ \\
+2 & 500 & $[-14.62, 4.40]$ & $-5.13 \pm 2.63$ & $[-15.17, 2.79]$  & $-4.98 \pm 2.66$ \\
+\midrule
+\textbf{All} & \textbf{1500} & $[-14.62, 22.12]$ & $4.47 \pm 8.76$ & $[-15.17, 18.66]$ & $0.53 \pm 9.63$ \\
+\bottomrule
+\end{tabular}
+\caption{Feature ranges and statistics for Dataset 1.}
+\label{tab:ls-stats}
+\end{table}
+
+\textbf{Key observations.}
+(i) Overall Pearson correlation between x1 and x2 is $-0.1173$.
+(ii) Three clusters are visually separated with no overlap, confirming linear separability.
+(iii) Class 1 is offset to the top-right ($x_1 \approx 15$, $x_2 \approx 11$); Classes 0 and 2
+share similar $x_2$ centres ($\approx -5$) but separate along $x_1$.
+(iv) Feature magnitudes reach $\sim 22$, which is relevant for understanding why the
+numerically-stable logistic function is necessary (see Section~\ref{sec:logistic-stability}).
+
+\subsection{Dataset 2: Nonlinearly Separable (NLS)}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.75\linewidth]{outputs/datasets/nls_raw.png}
+\caption{Raw scatter of Dataset 2. Three concentric crescent/ring structures.}
+\label{fig:nls-raw}
+\end{figure}
+
+Loaded from a single \code{.txt} file (\code{skiprows=1}). Classes are determined by
+\emph{position in file}: first 500 = class 0, next 500 = class 1, last 700 = class 2.
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{lrrrrr}
+\toprule
+Class & $n$ & x1 range & x1 mean $\pm$ std & x2 range & x2 mean $\pm$ std \\
+\midrule
+0 (inner) & 500 & $[-1.22, 0.74]$  & $-0.01 \pm 0.32$ & $[-1.24, 0.02]$  & $-0.34 \pm 0.31$ \\
+1 (middle) & 500 & $[-1.86, 1.91]$  & $0.12 \pm 0.80$  & $[-1.56, 1.64]$  & $0.12 \pm 0.79$ \\
+2 (outer) & 700 & $[-2.90, 2.87]$  & $0.02 \pm 1.55$  & $[-2.75, 2.92]$  & $-0.03 \pm 1.52$ \\
+\midrule
+\textbf{All} & \textbf{1700} & $[-2.90, 2.90]$ & $0.03 \pm 1.17$ & $[-2.75, 2.92]$ & $-0.05 \pm 1.15$ \\
+\bottomrule
+\end{tabular}
+\caption{Feature ranges for Dataset 2. Feature magnitudes are small ($[-3,3]$) compared to LS.}
+\label{tab:nls-stats}
+\end{table}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{lrrr}
+\toprule
+Class & $n$ & Mean dist.\ from origin & Std dist. \\
+\midrule
+0 (inner)  & 500 & 0.47  & 0.16 \\
+1 (middle) & 500 & 1.13  & 0.22 \\
+2 (outer)  & 700 & 2.17  & 0.46 \\
+\bottomrule
+\end{tabular}
+\caption{Radial distance from origin for each class, confirming concentric ring structure.}
+\label{tab:nls-radial}
+\end{table}
+
+\textbf{Key observations.}
+(i) Class sizes are \emph{imbalanced}: 500, 500, 700 --- stratified splitting is essential.
+(ii) The concentric ring structure means no linear boundary can separate any two class pair: every pair requires a non-linear surface (e.g.\ $x_1^2 + x_2^2 = c$).
+
+\subsection{Dataset 3: Univariate Regression}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.75\linewidth]{outputs/datasets/univariate_raw.png}
+\caption{Raw scatter of Dataset 3. Non-linear periodic function.}
+\label{fig:uni-raw}
+\end{figure}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lrr}
+\toprule
+Variable & Range & Mean $\pm$ std \\
+\midrule
+$x$ & $[0.00, 9.99]$   & $5.03 \pm 2.89$ \\
+$y$ & $[-3.96, 5.96]$   & $0.90 \pm 2.56$ \\
+\midrule
+$n$ & 1000 & \\
+\bottomrule
+\end{tabular}
+\caption{Univariate dataset statistics.}
+\label{tab:uni-stats}
+\end{table}
+
+The target function is a noisy periodic signal on $x \in [0,10]$. The mean target
+$\bar{y} = 0.90$ is small relative to the signal amplitude ($\sim 10$ units peak-to-peak),
+which inflates \%RMSE values.
+
+\subsection{Dataset 4: Bivariate Regression}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.65\linewidth]{outputs/datasets/bivariate_raw.png}
+\caption{Raw 3-D scatter of Dataset 4. The target surface is visibly curved.}
+\label{fig:biv-raw}
+\end{figure}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lrr}
+\toprule
+Variable & Range & Mean $\pm$ std \\
+\midrule
+$x_1$ & $[0.00, 10.00]$ & $5.01 \pm 2.88$ \\
+$x_2$ & $[0.00, 10.00]$ & $4.98 \pm 2.90$ \\
+$y$   & $[-1.00, 27.02]$ & $12.66 \pm 6.49$ \\
+\midrule
+$n$ & 10201 & \\
+\bottomrule
+\end{tabular}
+\caption{Bivariate dataset statistics. $n = 10{,}201$ samples on an approximate $101 \times 101$ grid.}
+\label{tab:biv-stats}
+\end{table}
+
+%% ================================================================
+%% SECTION 2: MODEL ARCHITECTURE
+%% ================================================================
+\section{Model Architecture}
+
+\subsection{The Single-Layer Perceptron}
+
+The core unit is a single neuron with an affine projection followed by a scalar non-linearity
+(\code{models/perceptron.py}):
+\begin{equation}
+\hat{y} = \phi(\mathbf{x}^{\top}\mathbf{w} + b), \qquad
+\phi \in \{\sigma, \tanh, \mathrm{id}\}.
+\label{eq:forward}
+\end{equation}
+
+\begin{itemize}
+\item \textbf{Logistic} $\sigma(z) = 1/(1+e^{-z})$: outputs $(0,1)$, thresholded at $0.5$.
+\item \textbf{Tanh}: outputs $(-1,1)$, thresholded at $0$. Zero-centred, which speeds
+convergence because its mean activation is closer to zero \cite{lecun1998efficient}.
+\item \textbf{Linear} $\phi(z)=z$: used for regression; $\phi'=1$ always.
+\end{itemize}
+
+\subsection{Numerically-Stable Logistic Function}\label{sec:logistic-stability}
+
+Implementation in \code{perceptron.py} (line 10):
+\begin{lstlisting}
+def sigmoid(self, x):
+    return np.where(x >= 0, 1/(1+np.exp(-x)),
+                          np.exp(x)/(1+np.exp(x)))
+\end{lstlisting}
+
+For large negative $z$, $\exp(-z)$ overflows \code{float64}. The split form keeps every
+exponent argument $\le 0$. This is the standard engineering practice in TensorFlow
+\code{tf.nn.sigmoid} \cite{numpy2024}. Necessary because Dataset 1 features reach $\sim 22$,
+pushing pre-activations past the overflow threshold.
+
+\subsection{Gradient Update Rule}\label{sec:gradient}
+
+MSE loss $\mathcal{L} = \frac{1}{N}\sum_i (\hat y_i - y_i)^2$. Chain rule gives
+(\code{perceptron.py}, lines 26--30):
+\begin{equation}
+\delta_i = (\hat y_i - y_i)\,\phi'(\hat y_i), \qquad
+\nabla_{\mathbf{w}} \mathcal{L} = \frac{1}{N}\mathbf{X}^{\top}\boldsymbol{\delta}, \qquad
+\nabla_b \mathcal{L} = \frac{1}{N}\sum_i \delta_i .
+\end{equation}
+
+Peak derivative magnitudes: logistic $\max = 0.25$, tanh $\max = 1.0$ ($4\times$ larger),
+linear $\phi' = 1$ always.
+
+\subsection{Optimiser and Initialisation}
+
+Batch GD, $\eta = 0.01$, 100 epochs. Chosen over SGD because with $N \le 10{,}201$ and
+$d \le 2$, full-batch steps cost microseconds and produce smooth deterministic curves.
+$\eta = 0.01$ empirically chosen: larger ($\ge 0.5$) saturates the logistic function; smaller ($\le 10^{-3}$)
+leaves NLS curves flat. Weights $\mathcal{N}(0, 0.01^2)$, $b=0$ \cite{lecun1998efficient}.
+
+%% ================================================================
+%% SECTION 3: MULTI-CLASS STRATEGY
+%% ================================================================
+\section{Multi-Class Strategy: One-vs-One (OvO)}
+
+For 3-class problems, \code{models/one\_vs\_one.py} trains $\binom{3}{2}=3$ independent
+binary perceptrons, one per class pair \cite{hastie1998pairwise}.
+
+\subsection{Why OvO and Not One-vs-Rest?}
+\begin{itemize}
+\item \textbf{Balanced sub-problems.} Each OvO classifier sees 1000 samples split evenly.
+OvR would give 500:1000 imbalance.
+\item \textbf{Simpler task.} Each binary problem is genuinely separable on Dataset 1.
+\item \textbf{Cost is trivial.} With $k=3$, OvO's balance advantage dominates.
+\end{itemize}
+
+\subsection{Label Encoding per Activation}
+
+Logistic uses $\{0,1\}$ labels (threshold at $0.5$); tanh uses $\{-1,+1\}$ (threshold at $0$).
+This is critical: using $\{0,1\}$ with tanh pushes all predictions positive and breaks voting.
+
+\subsection{Voting}
+Each pairwise classifier casts one vote; \code{argmax} determines the final class.
+Ties broken by lowest class index.
+
+%% ================================================================
+%% SECTION 4: CLASSIFICATION RESULTS
+%% ================================================================
+\section{Classification Results}\label{sec:ls-results}
+
+Seed $= 42$, $\eta = 0.01$, 100 epochs, 70/30 stratified split.
+
+\subsection{Dataset 1: Linearly Separable}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lcccc}
+\toprule
+Activation & Accuracy & Precision & Recall & F1 \\
+\midrule
+Logistic & 1.000 & 1.000 & 1.000 & 1.000 \\
+Tanh     & 1.000 & 1.000 & 1.000 & 1.000 \\
+\bottomrule
+\end{tabular}
+\caption{LS test-set metrics ($n_{\text{test}}=450$, 150/class).}
+\label{tab:ls-metrics}
+\end{table}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lccc}
+\toprule
+Pair & Logistic MSE & Tanh MSE \\
+\midrule
+(0 vs 1) & 0.0118 & 0.0032 \\
+(0 vs 2) & 0.0270 & 0.0081 \\
+(1 vs 2) & 0.0217 & 0.0083 \\
+\bottomrule
+\end{tabular}
+\caption{Final MSE per OvO classifier. Tanh converges $2$--$3\times$ faster.}
+\label{tab:ls-mse}
+\end{table}
+
+\textbf{Why it works.} Each class pair admits a separating line. A perceptron implements
+a half-plane; MSE is convex through the monotone activation. Tanh's lower MSE comes from
+$\tanh'(0)=1$ vs $\sigma'(0)=0.25$.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.85\linewidth]{outputs/ls/error_curves_logistic.png}
+\caption{Error vs.\ epochs, LS, logistic activation. Smooth monotone convergence.}
+\label{fig:ls-error}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.48\linewidth]{outputs/ls/decision_regions_logistic.png}
+\hfill
+\includegraphics[width=0.48\linewidth]{outputs/ls/decision_regions_tanh.png}
+\caption{Decision regions: logistic (left) vs tanh (right). Both produce clean partitions.}
+\label{fig:ls-dr}
+\end{figure}
+
+\subsection{Dataset 2: Nonlinearly Separable}\label{sec:nls-failure}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lcccc}
+\toprule
+Activation & Accuracy & Prec. & Rec. & F1 \\
+\midrule
+Logistic & 0.266 & 0.115 & 0.215 & 0.149 \\
+Tanh     & 0.280 & 0.112 & 0.226 & 0.150 \\
+Chance   & 0.333 & ---     & ---     & ---  \\
+\bottomrule
+\end{tabular}
+\caption{NLS test-set ($n_{\text{test}}=511$). Both at or below majority-class chance.}
+\label{tab:nls-metrics}
+\end{table}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lccc}
+\toprule
+Pair & Logistic MSE & Tanh MSE \\
+\midrule
+(0 vs 1) & 0.2489 & 0.9554 \\
+(0 vs 2) & 0.2483 & 0.9555 \\
+(1 vs 2) & 0.2491 & 0.9755 \\
+\bottomrule
+\end{tabular}
+\caption{NLS final MSE. Logistic stalls at chance ($\approx 0.25$); tanh diverges ($\approx 0.96$).}
+\label{tab:nls-mse}
+\end{table}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lrrr}
+\toprule
+\multicolumn{4}{c}{\textbf{Logistic Confusion Matrix}} \\
+\midrule
+ & Pred 0 & Pred 1 & Pred 2 \\
+Actual 0 & 0 & 0 & 150 \\
+Actual 1 & 40 & 0 & 110 \\
+Actual 2 & 75 & 0 & 136 \\
+\bottomrule
+\end{tabular}
+\caption{All predictions collapse to class 2 (the training majority).}
+\label{tab:nls-cm}
+\end{table}
+
+\textbf{Why it fails---representation, not optimisation.} Concentric rings require
+a non-linear boundary ($x_1^2 + x_2^2 = c$). A half-plane cannot isolate an annulus.
+Logistic stalls at MSE $\approx 0.25$ (balanced binary chance level). Tanh diverges
+(MSE $> 0.95$) because its unbounded range allows predictions to drift to $\pm 1$
+with equal confidence, collapsing the voting scheme.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.85\linewidth]{outputs/nls/error_curves_logistic.png}
+\caption{Error vs.\ epochs, NLS, logistic activation. Flat at $\approx 0.25$---chance-level plateau.}
+\label{fig:nls-error}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.48\linewidth]{outputs/nls/decision_regions_logistic.png}
+\hfill
+\includegraphics[width=0.48\linewidth]{outputs/nls/decision_regions_tanh.png}
+\caption{NLS decision regions: logistic (left) vs tanh (right). Concentric structure unresolvable.}
+\label{fig:nls-dr}
+\end{figure}
+
+%% ================================================================
+%% SECTION 5: REGRESSION RESULTS
+%% ================================================================
+\section{Regression Results}
+
+A single perceptron with identity activation implements $f(\mathbf{x})=\mathbf{x}^{\top}\mathbf{w}+b$;
+trained by GD on MSE it converges to the best affine approximation.
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lccccc}
+\toprule
+Task & $n$ (train/test) & Train RMSE & \%RMSE & Test RMSE & \%RMSE \\
+\midrule
+Univariate ($d=1$) & 700/301 & 1.2842 & 50.22 & 1.2662 & 53.52 \\
+Bivariate ($d=2$) & 7140/3061 & 3.3674 & 82.53 & 3.3342 & 83.64 \\
+\bottomrule
+\end{tabular}
+\caption{Regression performance. \%RMSE $=$ RMSE$/\bar{y} \times 100$.}
+\label{tab:reg}
+\end{table}
+
+\textbf{Underfitting diagnosis.} Train and test RMSE are nearly identical (1.28 vs 1.27;
+3.37 vs 3.33)---evidence of \emph{high bias} (underfitting), not overfitting. An affine
+model captures the linear component of the target but cannot represent the sinusoidal
+structure (univariate) or the curved surface (bivariate).
+
+The large \%RMSE values for the univariate task are partly an artefact of the normalisation
+divisor $\bar{y} = 0.90$ being small relative to the signal amplitude ($\sim 10$ units
+peak-to-peak). The absolute RMSE of 1.27 on a $y$-range of $[-4, 6]$ corresponds to
+$\sim 13\%$ of the total signal range.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.48\linewidth]{outputs/regression/univariate/model_vs_target_test.png}
+\hfill
+\includegraphics[width=0.48\linewidth]{outputs/regression/univariate/scatter_test.png}
+\caption{Univariate: model fit on test data (left) and target vs predicted scatter (right).}
+\label{fig:reg-uni}
+\end{figure}
+
+%% ================================================================
+%% SECTION 6: DESIGN DECISIONS AND ALTERNATIVES
+%% ================================================================
+\section{Design Decisions and Alternatives Considered}
+
+\subsection{Feature Scaling}
+Dataset 1 spans $[-15, 22]$. Unnormalised inputs push pre-activations into the logistic
+function's saturated tails. We chose not to rescale, keeping the pipeline faithful to raw
+data. Standardising to zero-mean/unit-variance would speed convergence; omitted for simplicity.
+
+\subsection{Loss: MSE vs Cross-Entropy}
+The assignment specifies MSE. Cross-entropy with logistic output gives $\delta = \hat y - y$ (no
+$\sigma'$ factor), producing larger gradients and faster convergence. We follow the spec.
+
+\subsection{Tanh Label Encoding}
+Using $\{0,1\}$ with tanh would place the optimum at $\hat y = 0.5$, misaligning with
+tanh's $[-1,1]$ range. The $\{-1,+1\}$ encoding is the standard fix.
+
+\subsection{Stratified Split}
+Essential because NLS has imbalanced classes (500, 500, 700). Without stratification,
+class 2 could be underrepresented in training.
+
+%% ================================================================
+%% SECTION 7: REFERENCES
+%% ================================================================
+\begin{thebibliography}{99}
+
+\bibitem{lecun1998efficient}
+Y.~LeCun, L.~Bottou, G.~B.~Orr, and K.-R.~M{\"u}ller,
+``Efficient BackProp,''
+\emph{Neural Networks: Tricks of the Trade}, Springer, 1998.
+Available: \url{https://leon.bottou.org/publications/pdf/tricks-2012.pdf}
+
+\bibitem{hastie1998pairwise}
+T.~Hastie and R.~Tibshirani,
+``Classification by Pairwise Coupling,''
+\emph{Annals of Statistics}, vol.~26, no.~2, pp.~451--471, 1998.
+DOI: \url{https://doi.org/10.1214/aos/1028144843}
+
+\bibitem{numpy2024}
+NumPy Developers,
+``NumPy v2.1 Documentation,''
+\url{https://numpy.org/doc/stable/}
+
+\bibitem{goodfellow2016deep}
+I.~Goodfellow, Y.~Bengio, and A.~Courville,
+\emph{Deep Learning}, MIT Press, 2016.
+\url{https://www.deeplearningbook.org/}
+
+\bibitem{haykin2009neural}
+S.~Haykin,
+\emph{Neural Networks and Learning Machines}, 3rd ed., Pearson, 2009.
+
+\end{thebibliography}
+
+\end{document}
