@@ -1,4 +1,4 @@
-# ── Datasets (large files, not tracked) ──────────────────────────
+﻿# ── Datasets (large files, not tracked) ──────────────────────────
 !**/data/README.md
 data/
 
@@ -17,3 +17,14 @@ Assignment*/outputs/
 
 # ── OS junk ───────────────────────────────────────────────────────
 .DS_Store
+
+# ── Images ──────────────────────────────────────────────────────
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.bmp
+*.tiff
+*.tif
+*.svg
+*.webp
