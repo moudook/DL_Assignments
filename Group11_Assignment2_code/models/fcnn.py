@@ -10,15 +10,19 @@ class FCNN:
     def __init__(
         self,
         layer_sizes: list[int],
+        hidden_activation: str = "sigmoid",
         output_activation: str = "sigmoid",
         seed: int = 42,
     ) -> None:
         if len(layer_sizes) < 2:
             raise ValueError("layer_sizes must have at least input and output sizes")
-        if output_activation not in ("sigmoid", "linear"):
+        if hidden_activation not in ("sigmoid", "tanh"):
+            raise ValueError(f"Unknown hidden_activation: {hidden_activation}")
+        if output_activation not in ("sigmoid", "tanh", "linear"):
             raise ValueError(f"Unknown output_activation: {output_activation}")
 
         self.layer_sizes = list(layer_sizes)
+        self.hidden_activation = hidden_activation
         self.output_activation = output_activation
         self.n_layers = len(layer_sizes) - 1
 
@@ -42,8 +46,11 @@ class FCNN:
 
     def _activate(self, z: np.ndarray, layer_idx: int) -> np.ndarray:
         is_last = layer_idx == self.n_layers - 1
-        if is_last and self.output_activation == "linear":
+        activation = self.output_activation if is_last else self.hidden_activation
+        if activation == "linear":
             return z
+        if activation == "tanh":
+            return np.tanh(z)
         return self._sigmoid(z)
 
     def forward(self, X: np.ndarray, store: bool = False) -> list[np.ndarray]:
@@ -65,13 +72,15 @@ class FCNN:
 
     def predict(self, X: np.ndarray) -> np.ndarray:
         out = self.forward(X)[-1]
-        if self.output_activation == "sigmoid":
+        if self.output_activation in ("sigmoid", "tanh"):
             return np.argmax(out, axis=1)
         return out
 
-    def _output_derivative(self, h: np.ndarray) -> np.ndarray:
-        if self.output_activation == "linear":
+    def _derivative(self, h: np.ndarray, activation: str) -> np.ndarray:
+        if activation == "linear":
             return np.ones_like(h)
+        if activation == "tanh":
+            return 1.0 - h ** 2
         return h * (1.0 - h)
 
     def _loss_and_grad(
@@ -79,7 +88,7 @@ class FCNN:
         X: np.ndarray,
         y: np.ndarray,
     ) -> tuple[float, list[np.ndarray], list[np.ndarray]]:
-        # one full forward + backward pass. y is one-hot for sigmoid output, raw for linear.
+        # one full forward + backward pass. y is one-hot for sigmoid/tanh output, raw for linear.
         acts = self.forward(X, store=True)
         n = X.shape[0]
         yhat = acts[-1]
@@ -87,7 +96,7 @@ class FCNN:
         diff = yhat - y
         mse = float(np.mean(diff ** 2))
 
-        delta = diff * self._output_derivative(yhat)
+        delta = diff * self._derivative(yhat, self.output_activation)
 
         grad_W: list[np.ndarray] = [None] * self.n_layers
         grad_b: list[np.ndarray] = [None] * self.n_layers
@@ -97,7 +106,7 @@ class FCNN:
 
         for i in range(self.n_layers - 2, -1, -1):
             h_acts = acts[i + 1]
-            delta = (delta @ self.weights[i + 1]) * (h_acts * (1.0 - h_acts))
+            delta = (delta @ self.weights[i + 1]) * self._derivative(h_acts, self.hidden_activation)
             grad_W[i] = delta.T @ acts[i] / n
             grad_b[i] = delta.mean(axis=0)
 

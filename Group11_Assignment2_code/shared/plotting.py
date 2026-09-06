@@ -213,3 +213,73 @@ def plot_node_surfaces(
         saved.append(out_path)
 
     return saved
+
+
+def plot_model_output_superimposed(
+    model,
+    X: np.ndarray,
+    y: np.ndarray,
+    title: str,
+    save_path: str | None = None,
+    resolution: int = 100,
+) -> None:
+    plt.figure(figsize=(8.0, 6.0))
+    
+    if X.shape[1] == 1:
+        # Univariate
+        plt.scatter(X[:, 0], y, color="#4C72B0", s=15, alpha=0.6, label="Target")
+        
+        x_grid = np.linspace(X[:, 0].min(), X[:, 0].max(), resolution).reshape(-1, 1)
+        y_pred_grid = model.predict(x_grid)
+        
+        plt.plot(x_grid, y_pred_grid, color="#DD8452", lw=2.5, label="Model Output")
+        plt.xlabel("x")
+        plt.ylabel("y")
+        
+    elif X.shape[1] == 2:
+        # Bivariate
+        fig = plt.gcf()
+        ax = fig.add_subplot(111, projection="3d")
+        ax.scatter(X[:, 0], X[:, 1], y, color="#4C72B0", s=15, alpha=0.6, label="Target")
+        
+        x1_grid = np.linspace(X[:, 0].min(), X[:, 0].max(), resolution)
+        x2_grid = np.linspace(X[:, 1].min(), X[:, 1].max(), resolution)
+        xx1, xx2 = np.meshgrid(x1_grid, x2_grid)
+        grid = np.c_[xx1.ravel(), xx2.ravel()]
+        
+        y_pred_grid = model.predict(grid).reshape(xx1.shape)
+        
+        ax.plot_surface(xx1, xx2, y_pred_grid, cmap="viridis", alpha=0.6, edgecolor="none")
+        ax.set_xlabel("x1")
+        ax.set_ylabel("x2")
+        ax.set_zlabel("y")
+    else:
+        raise ValueError(f"X must be 1-D or 2-D for superimposed plot, got {X.shape[1]}")
+        
+    plt.title(title)
+    plt.legend(loc="best")
+    plt.tight_layout()
+    _save(save_path)
+
+
+def plot_scatter_target_vs_model(
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    title: str,
+    save_path: str | None = None,
+) -> None:
+    plt.figure(figsize=(6.0, 6.0))
+    plt.scatter(y_true, y_pred, color="#4C72B0", s=15, alpha=0.6)
+    
+    # Perfect fit line
+    min_val = min(y_true.min(), y_pred.min())
+    max_val = max(y_true.max(), y_pred.max())
+    plt.plot([min_val, max_val], [min_val, max_val], color="#DD8452", lw=2, ls="--", label="Perfect Fit")
+    
+    plt.xlabel("Target Output")
+    plt.ylabel("Model Output")
+    plt.title(title)
+    plt.legend(loc="best")
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    _save(save_path)

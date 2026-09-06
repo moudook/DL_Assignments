@@ -9,22 +9,21 @@ import numpy as np
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-from shared.data import load_nls_data, train_val_test_split
-from _common import ClassifierRun, RunSpec
+from shared.data import load_univariate_data, train_val_test_split
+from _common import RegressionRun, RegRunSpec
 
 
 HYPERPARAMS = {
     "hidden_sizes": [2, 4, 8, 16, 32],
-    "lr": 0.5,
-    "epochs": 800,
+    "lr": 0.05,
+    "epochs": 1500,
     "seed": 42,
     "log_every": 100,
 }
 
-DATASET_TAG = "NLS"
-LAYER_LABEL = "2HL"
-N_CLASSES = 3
-OUTPUT_ROOT = os.path.join(ROOT, "outputs", "classification", "nls")
+DATASET_TAG = "Univariate"
+LAYER_LABEL = "1HL"
+OUTPUT_ROOT = os.path.join(ROOT, "outputs", "regression", "univariate")
 
 
 def _parse_args() -> dict:
@@ -35,7 +34,7 @@ def _parse_args() -> dict:
     p.add_argument("--seed", type=int, default=HYPERPARAMS["seed"])
     p.add_argument("--log_every", type=int, default=HYPERPARAMS["log_every"])
     p.add_argument("--hidden_activation", type=str, choices=["sigmoid", "tanh"], default="sigmoid")
-    p.add_argument("--output_activation", type=str, choices=["sigmoid", "tanh", "linear"], default="sigmoid")
+    p.add_argument("--output_activation", type=str, choices=["linear"], default="linear")
     p.add_argument("--quiet", action="store_true")
     return vars(p.parse_args())
 
@@ -44,17 +43,16 @@ def main() -> None:
     cfg = _parse_args()
     print(f"config: {cfg}")
 
-    X, y = load_nls_data()
+    X, y = load_univariate_data()
     X_tr, X_va, X_te, y_tr, y_va, y_te = train_val_test_split(
-        X, y, ratios=(0.6, 0.2, 0.2), seed=cfg["seed"], stratify=True,
+        X, y, ratios=(0.6, 0.2, 0.2), seed=cfg["seed"], stratify=False,
     )
     print(f"data: train={X_tr.shape[0]}  val={X_va.shape[0]}  test={X_te.shape[0]}")
 
-    spec = RunSpec(
+    spec = RegRunSpec(
         dataset_tag=DATASET_TAG,
         layer_label=LAYER_LABEL,
         output_root=OUTPUT_ROOT,
-        n_classes=N_CLASSES,
         X_tr=X_tr, y_tr=y_tr,
         X_va=X_va, y_va=y_va,
         X_te=X_te, y_te=y_te,
@@ -67,7 +65,7 @@ def main() -> None:
         log_every=cfg["log_every"],
         quiet=cfg["quiet"],
     )
-    ClassifierRun(spec).execute()
+    RegressionRun(spec).execute()
 
 
 if __name__ == "__main__":

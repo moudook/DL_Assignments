@@ -9,31 +9,28 @@ import numpy as np
 
 from models.fcnn import FCNN
 from optimizers.sgd import SGDTrainer
-from shared.data import to_one_hot
-from shared.metrics import classification_summary
+from shared.metrics import regression_summary
 from shared.plotting import (
-    plot_confusion_matrix_heatmap,
-    plot_decision_regions,
     plot_error_curve,
+    plot_model_output_superimposed,
+    plot_scatter_target_vs_model,
     plot_node_surfaces,
 )
 
 
 @dataclass
-class ArchResult:
+class RegArchResult:
     hidden: int
     val_mse: float
-    val_acc: float
-    mean_f1: float
-    confusion_matrix: np.ndarray
+    val_percent_rmse: float
+    val_rmse: float
 
 
 @dataclass
-class RunSpec:
+class RegRunSpec:
     dataset_tag: str
     layer_label: str
     output_root: str
-    n_classes: int
     X_tr: np.ndarray
     y_tr: np.ndarray
     X_va: np.ndarray
@@ -56,25 +53,11 @@ def _dump_json(path: str, payload: dict) -> None:
         json.dump(payload, f, indent=2)
 
 
-def _metrics_to_json(summary: dict) -> dict:
-    return {
-        "name": summary["name"],
-        "accuracy": summary["accuracy"],
-        "precisions": summary["precisions"].tolist(),
-        "recalls": summary["recalls"].tolist(),
-        "f1_scores": summary["f1_scores"].tolist(),
-        "mean_precision": summary["mean_precision"],
-        "mean_recall": summary["mean_recall"],
-        "mean_f1": summary["mean_f1"],
-        "confusion_matrix": summary["confusion_matrix"].tolist(),
-    }
-
-
-def _cv_table(results: list[ArchResult], best: ArchResult, tag: str, layer_label: str) -> str:
-    header = f"  {'h':>3s}  {'val_mse':>10s}  {'val_acc':>8s}  {'mean_f1':>8s}"
+def _cv_table(results: list[RegArchResult], best: RegArchResult, tag: str, layer_label: str) -> str:
+    header = f"  {'h':>3s}  {'val_mse':>12s}  {'val_rmse':>10s}  {'val_%rmse':>10s}"
     rule = "  " + "-" * (len(header) - 2)
     body = "\n".join(
-        f"  {r.hidden:>3d}  {r.val_mse:>10.6f}  {r.val_acc:>8.4f}  {r.mean_f1:>8.4f}"
+        f"  {r.hidden:>3d}  {r.val_mse:>12.6f}  {r.val_rmse:>10.4f}  {r.val_percent_rmse:>10.4f}"
         for r in results
     )
     return (
@@ -84,14 +67,14 @@ def _cv_table(results: list[ArchResult], best: ArchResult, tag: str, layer_label
     )
 
 
-class ClassifierRun:
-    def __init__(self, spec: RunSpec) -> None:
+class RegressionRun:
+    def __init__(self, spec: RegRunSpec) -> None:
         self.spec = spec
-        self._results: list[ArchResult] = []
+        self._results: list[RegArchResult] = []
         self._models: list[FCNN] = []
         self._best_index: int = -1
 
-    def execute(self) -> ArchResult:
+    def execute(self) -> RegArchResult:
         for h in self.spec.hidden_sizes:
             model, result = self._train_one(h)
             self._models.append(model)
@@ -106,20 +89,22 @@ class ClassifierRun:
 
     def _layer_sizes(self, h: int) -> list[int]:
         n_in = self.spec.X_tr.shape[1]
-        n_out = self.spec.n_classes
+        n_out = 1
         if self.spec.layer_label == "1HL":
             return [n_in, h, n_out]
         if self.spec.layer_label == "2HL":
             return [n_in, h, h, n_out]
         raise ValueError(f"Unsupported layer label: {self.spec.layer_label}")
 
-    def _train_one(self, h: int) -> tuple[FCNN, ArchResult]:
+    def _train_one(self, h: int) -> tuple[FCNN, RegArchResult]:
         arch_dir = os.path.join(self.spec.output_root, f"h{h}")
         os.makedirs(arch_dir, exist_ok=True)
 
         model = FCNN(self._layer_sizes(h), hidden_activation=self.spec.hidden_activation, output_activation=self.spec.output_activation, seed=self.spec.seed)
-        y_tr_oh = to_one_hot(self.spec.y_tr, self.spec.n_classes)
-        y_va_oh = to_one_hot(self.spec.y_va, self.spec.n_classes)
+
+        # y needs to be column vectors for fcnn regression
+        y_tr_col = self.spec.y_tr.reshape(-1, 1)
+        y_va_col = self.spec.y_va.reshape(-1, 1)
 
         history = SGDTrainer(
             model,
@@ -127,13 +112,14 @@ class ClassifierRun:
             epochs=self.spec.epochs,
             seed=self.spec.seed,
             X_val=self.spec.X_va,
-            y_val=y_va_oh,
+            y_val=y_va_col,
             log_every=self.spec.log_every,
             verbose=not self.spec.quiet,
-        ).fit(self.spec.X_tr, y_tr_oh)
+        ).fit(self.spec.X_tr, y_tr_col)
 
-        val_summary = classification_summary(
-            self.spec.y_va, model.predict(self.spec.X_va),
+        val_pred = model.predict(self.spec.X_va).ravel()
+        val_summary = regression_summary(
+            self.spec.y_va, val_pred,
             name=f"h{h} validation",
         )
 
@@ -142,20 +128,26 @@ class ClassifierRun:
             title=f"{self.spec.dataset_tag} - {self.spec.layer_label} x {h} - error vs epoch",
             save_path=os.path.join(arch_dir, "error_curve.png"),
         )
-        plot_confusion_matrix_heatmap(
-            val_summary["confusion_matrix"],
-            title=f"{self.spec.dataset_tag} - {self.spec.layer_label} x {h} - validation confusion matrix",
-            save_path=os.path.join(arch_dir, "cm_val.png"),
+        
+        plot_model_output_superimposed(
+            model, self.spec.X_va, self.spec.y_va,
+            title=f"{self.spec.dataset_tag} - {self.spec.layer_label} x {h} - Validation superimposed",
+            save_path=os.path.join(arch_dir, "superimposed_val.png"),
         )
-        _dump_json(os.path.join(arch_dir, "metrics_val.json"),
-                   _metrics_to_json(val_summary))
+        
+        plot_scatter_target_vs_model(
+            self.spec.y_va, val_pred,
+            title=f"{self.spec.dataset_tag} - {self.spec.layer_label} x {h} - Validation scatter",
+            save_path=os.path.join(arch_dir, "scatter_val.png"),
+        )
 
-        result = ArchResult(
+        _dump_json(os.path.join(arch_dir, "metrics_val.json"), val_summary)
+
+        result = RegArchResult(
             hidden=h,
             val_mse=history["val_mse"][-1],
-            val_acc=history["val_acc"][-1],
-            mean_f1=val_summary["mean_f1"],
-            confusion_matrix=val_summary["confusion_matrix"],
+            val_percent_rmse=val_summary["percent_rmse"],
+            val_rmse=val_summary["rmse"],
         )
         return model, result
 
@@ -168,45 +160,49 @@ class ClassifierRun:
         X_all = np.vstack([self.spec.X_tr, self.spec.X_va, self.spec.X_te])
         y_all = np.concatenate([self.spec.y_tr, self.spec.y_va, self.spec.y_te])
 
-        plot_decision_regions(
-            best_model, self.spec.X_tr, self.spec.y_tr,
-            title=f"{self.spec.dataset_tag} - {self.spec.layer_label} x {best.hidden} - decision regions (train data overlaid)",
-            save_path=os.path.join(best_dir, "decision_regions.png"),
-        )
-
-        test_summary = classification_summary(
-            self.spec.y_te, best_model.predict(self.spec.X_te),
+        test_pred = best_model.predict(self.spec.X_te).ravel()
+        test_summary = regression_summary(
+            self.spec.y_te, test_pred,
             name=f"h{best.hidden} test",
         )
-        plot_confusion_matrix_heatmap(
-            test_summary["confusion_matrix"],
-            title=f"{self.spec.dataset_tag} - {self.spec.layer_label} x {best.hidden} - test confusion matrix",
-            save_path=os.path.join(best_dir, "cm_test.png"),
+        
+        plot_model_output_superimposed(
+            best_model, self.spec.X_te, self.spec.y_te,
+            title=f"{self.spec.dataset_tag} - {self.spec.layer_label} x {best.hidden} - Test superimposed",
+            save_path=os.path.join(best_dir, "superimposed_test.png"),
         )
-        _dump_json(os.path.join(best_dir, "metrics_test.json"),
-                   _metrics_to_json(test_summary))
+        
+        plot_scatter_target_vs_model(
+            self.spec.y_te, test_pred,
+            title=f"{self.spec.dataset_tag} - {self.spec.layer_label} x {best.hidden} - Test scatter",
+            save_path=os.path.join(best_dir, "scatter_test.png"),
+        )
 
-        hidden_layer_indices = [1, 2] if self.spec.layer_label == "2HL" else [1]
-        for li in hidden_layer_indices:
-            n_nodes = best_model.layer_sizes[li]
+        _dump_json(os.path.join(best_dir, "metrics_test.json"), test_summary)
+
+        # Plot node surfaces if bivariate (2D input)
+        if self.spec.X_tr.shape[1] == 2:
+            hidden_layer_indices = [1, 2] if self.spec.layer_label == "2HL" else [1]
+            for li in hidden_layer_indices:
+                n_nodes = best_model.layer_sizes[li]
+                plot_node_surfaces(
+                    best_model, X_all, None, # No scatter of target for hidden layer surfaces
+                    layer_idx=li,
+                    node_indices=list(range(n_nodes)),
+                    title_prefix=f"{self.spec.dataset_tag} - best {self.spec.layer_label} x {best.hidden}",
+                    save_dir=best_dir,
+                    kind="hidden",
+                )
+
+            n_out = best_model.layer_sizes[-1]
             plot_node_surfaces(
                 best_model, X_all, y_all,
-                layer_idx=li,
-                node_indices=list(range(n_nodes)),
+                layer_idx=best_model.n_layers,
+                node_indices=list(range(n_out)),
                 title_prefix=f"{self.spec.dataset_tag} - best {self.spec.layer_label} x {best.hidden}",
                 save_dir=best_dir,
-                kind="hidden",
+                kind="output",
             )
 
-        n_out = best_model.layer_sizes[-1]
-        plot_node_surfaces(
-            best_model, X_all, y_all,
-            layer_idx=best_model.n_layers,
-            node_indices=list(range(n_out)),
-            title_prefix=f"{self.spec.dataset_tag} - best {self.spec.layer_label} x {best.hidden}",
-            save_dir=best_dir,
-            kind="output",
-        )
-
-        print(f"  test -> acc={test_summary['accuracy']:.4f}  "
-              f"mean_f1={test_summary['mean_f1']:.4f}")
+        print(f"  test -> rmse={test_summary['rmse']:.4f}  "
+              f"%rmse={test_summary['percent_rmse']:.4f}")

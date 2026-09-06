@@ -34,6 +34,8 @@ def _parse_args() -> dict:
     p.add_argument("--epochs", type=int, default=HYPERPARAMS["epochs"])
     p.add_argument("--seed", type=int, default=HYPERPARAMS["seed"])
     p.add_argument("--log_every", type=int, default=HYPERPARAMS["log_every"])
+    p.add_argument("--hidden_activation", type=str, choices=["sigmoid", "tanh"], default="sigmoid")
+    p.add_argument("--output_activation", type=str, choices=["sigmoid", "tanh", "linear"], default="sigmoid")
     p.add_argument("--quiet", action="store_true")
     return vars(p.parse_args())
 
@@ -57,6 +59,8 @@ def main() -> None:
         X_va=X_va, y_va=y_va,
         X_te=X_te, y_te=y_te,
         hidden_sizes=cfg["hidden_sizes"],
+        hidden_activation=cfg["hidden_activation"],
+        output_activation=cfg["output_activation"],
         lr=cfg["lr"],
         epochs=cfg["epochs"],
         seed=cfg["seed"],

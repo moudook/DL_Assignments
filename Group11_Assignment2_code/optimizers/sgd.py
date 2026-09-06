@@ -19,6 +19,7 @@ class SGDTrainer:
         y_val: np.ndarray | None = None,
         log_every: int = 0,
         verbose: bool = False,
+        tol: float = 1e-4,
     ) -> None:
         self.model = model
         self.lr = lr
@@ -28,6 +29,7 @@ class SGDTrainer:
         self.y_val = y_val
         self.log_every = log_every
         self.verbose = verbose
+        self.tol = tol
 
     def _val_acc(self) -> float:
         if self.X_val is None or self.y_val is None:
@@ -76,5 +78,10 @@ class SGDTrainer:
                     if not np.isnan(history["val_acc"][-1]):
                         msg += f"  val_acc={history['val_acc'][-1]:.4f}"
                 print(msg)
+
+            if epoch > 0 and abs(history["train_mse"][-2] - train_mse) < self.tol:
+                if self.verbose:
+                    print(f"Converged at epoch {epoch + 1} (train_mse change < {self.tol})")
+                break
 
         return history
