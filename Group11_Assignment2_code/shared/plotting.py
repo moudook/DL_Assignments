@@ -215,6 +215,54 @@ def plot_node_surfaces(
     return saved
 
 
+def plot_node_curves_1d(
+    model,
+    X: np.ndarray,
+    y: np.ndarray | None,
+    layer_idx: int,
+    node_indices: list[int],
+    title_prefix: str,
+    save_dir: str,
+    resolution: int = 300,
+    kind: str = "node",
+) -> list[str]:
+    """2-D line plot of every requested node's output over a 1-D input range.
+
+    This is the 1-D equivalent of `plot_node_surfaces` (which requires 2-D input).
+    Returns the list of saved file paths.
+    """
+    if X.shape[1] != 1:
+        raise ValueError(f"X must be 1-D for node-curve plot, got {X.shape[1]}")
+
+    x_grid = np.linspace(X[:, 0].min(), X[:, 0].max(), resolution).reshape(-1, 1)
+    layer_acts = model.forward(x_grid)[layer_idx]
+
+    saved = []
+    for node_idx in node_indices:
+        zz = layer_acts[:, node_idx]
+
+        plt.figure(figsize=(8.0, 4.8))
+        plt.plot(x_grid.ravel(), zz, lw=2.0, color="#4C72B0", label=f"{kind} node {node_idx}")
+        if y is not None:
+            layer_at_data = model.forward(X)[layer_idx]
+            plt.scatter(X[:, 0], layer_at_data[:, node_idx],
+                        color="#C44E52", s=10, alpha=0.5, label="Data points")
+        plt.xlabel("x")
+        plt.ylabel("Activation")
+        plt.title(f"{title_prefix} — {kind} node {node_idx} (layer {layer_idx})")
+        plt.legend(loc="best")
+        plt.tight_layout()
+
+        out_path = os.path.join(
+            save_dir,
+            f"curve_{kind}_l{layer_idx}_n{node_idx}.png",
+        )
+        _save(out_path)
+        saved.append(out_path)
+
+    return saved
+
+
 def plot_model_output_superimposed(
     model,
     X: np.ndarray,

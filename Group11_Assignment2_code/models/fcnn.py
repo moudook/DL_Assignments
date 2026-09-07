@@ -18,7 +18,7 @@ class FCNN:
             raise ValueError("layer_sizes must have at least input and output sizes")
         if hidden_activation not in ("sigmoid", "tanh"):
             raise ValueError(f"Unknown hidden_activation: {hidden_activation}")
-        if output_activation not in ("sigmoid", "tanh", "linear"):
+        if output_activation not in ("sigmoid", "tanh", "linear", "softmax"):
             raise ValueError(f"Unknown output_activation: {output_activation}")
 
         self.layer_sizes = list(layer_sizes)
@@ -44,6 +44,12 @@ class FCNN:
     def _sigmoid(z: np.ndarray) -> np.ndarray:
         return 1.0 / (1.0 + np.exp(-np.clip(z, -60.0, 60.0)))
 
+    @staticmethod
+    def _softmax(z: np.ndarray) -> np.ndarray:
+        z_max = np.max(z, axis=1, keepdims=True)
+        exp_z = np.exp(np.clip(z - z_max, -60.0, 60.0))
+        return exp_z / np.sum(exp_z, axis=1, keepdims=True)
+
     def _activate(self, z: np.ndarray, layer_idx: int) -> np.ndarray:
         is_last = layer_idx == self.n_layers - 1
         activation = self.output_activation if is_last else self.hidden_activation
@@ -51,6 +57,8 @@ class FCNN:
             return z
         if activation == "tanh":
             return np.tanh(z)
+        if activation == "softmax":
+            return self._softmax(z)
         return self._sigmoid(z)
 
     def forward(self, X: np.ndarray, store: bool = False) -> list[np.ndarray]:
@@ -72,7 +80,7 @@ class FCNN:
 
     def predict(self, X: np.ndarray) -> np.ndarray:
         out = self.forward(X)[-1]
-        if self.output_activation in ("sigmoid", "tanh"):
+        if self.output_activation in ("sigmoid", "tanh", "softmax"):
             return np.argmax(out, axis=1)
         return out
 
@@ -96,7 +104,11 @@ class FCNN:
         diff = yhat - y
         mse = float(np.mean(diff ** 2))
 
-        delta = diff * self._derivative(yhat, self.output_activation)
+        if self.output_activation == "softmax":
+            sum_diff_yhat = np.sum(diff * yhat, axis=1, keepdims=True)
+            delta = yhat * (diff - sum_diff_yhat)
+        else:
+            delta = diff * self._derivative(yhat, self.output_activation)
 
         grad_W: list[np.ndarray] = [None] * self.n_layers
         grad_b: list[np.ndarray] = [None] * self.n_layers

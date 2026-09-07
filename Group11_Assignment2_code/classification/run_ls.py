@@ -35,7 +35,7 @@ def _parse_args() -> dict:
     p.add_argument("--seed", type=int, default=HYPERPARAMS["seed"])
     p.add_argument("--log_every", type=int, default=HYPERPARAMS["log_every"])
     p.add_argument("--hidden_activation", type=str, choices=["sigmoid", "tanh"], default="sigmoid")
-    p.add_argument("--output_activation", type=str, choices=["sigmoid", "tanh", "linear"], default="sigmoid")
+    p.add_argument("--output_activation", type=str, choices=["sigmoid", "tanh", "linear", "softmax"], default="softmax")
     p.add_argument("--quiet", action="store_true")
     return vars(p.parse_args())
 

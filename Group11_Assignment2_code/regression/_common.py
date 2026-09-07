@@ -15,15 +15,19 @@ from shared.plotting import (
     plot_model_output_superimposed,
     plot_scatter_target_vs_model,
     plot_node_surfaces,
+    plot_node_curves_1d,
 )
 
 
 @dataclass
 class RegArchResult:
     hidden: int
+    train_mse: float
+    train_rmse: float
+    train_percent_rmse: float
     val_mse: float
-    val_percent_rmse: float
     val_rmse: float
+    val_percent_rmse: float
 
 
 @dataclass
@@ -54,10 +58,10 @@ def _dump_json(path: str, payload: dict) -> None:
 
 
 def _cv_table(results: list[RegArchResult], best: RegArchResult, tag: str, layer_label: str) -> str:
-    header = f"  {'h':>3s}  {'val_mse':>12s}  {'val_rmse':>10s}  {'val_%rmse':>10s}"
+    header = f"  {'h':>3s}  {'tr_rmse':>10s}  {'tr_%rmse':>10s}  {'val_rmse':>10s}  {'val_%rmse':>10s}"
     rule = "  " + "-" * (len(header) - 2)
     body = "\n".join(
-        f"  {r.hidden:>3d}  {r.val_mse:>12.6f}  {r.val_rmse:>10.4f}  {r.val_percent_rmse:>10.4f}"
+        f"  {r.hidden:>3d}  {r.train_rmse:>10.4f}  {r.train_percent_rmse:>10.4f}  {r.val_rmse:>10.4f}  {r.val_percent_rmse:>10.4f}"
         for r in results
     )
     return (
@@ -93,7 +97,8 @@ class RegressionRun:
         if self.spec.layer_label == "1HL":
             return [n_in, h, n_out]
         if self.spec.layer_label == "2HL":
-            return [n_in, h, h, n_out]
+            h2 = max(1, h // 2)
+            return [n_in, h, h2, n_out]
         raise ValueError(f"Unsupported layer label: {self.spec.layer_label}")
 
     def _train_one(self, h: int) -> tuple[FCNN, RegArchResult]:
@@ -116,6 +121,12 @@ class RegressionRun:
             log_every=self.spec.log_every,
             verbose=not self.spec.quiet,
         ).fit(self.spec.X_tr, y_tr_col)
+
+        train_pred = model.predict(self.spec.X_tr).ravel()
+        train_summary = regression_summary(
+            self.spec.y_tr, train_pred,
+            name=f"h{h} train",
+        )
 
         val_pred = model.predict(self.spec.X_va).ravel()
         val_summary = regression_summary(
@@ -141,13 +152,17 @@ class RegressionRun:
             save_path=os.path.join(arch_dir, "scatter_val.png"),
         )
 
+        _dump_json(os.path.join(arch_dir, "metrics_tr.json"), train_summary)
         _dump_json(os.path.join(arch_dir, "metrics_val.json"), val_summary)
 
         result = RegArchResult(
             hidden=h,
+            train_mse=history["train_mse"][-1],
+            train_rmse=train_summary["rmse"],
+            train_percent_rmse=train_summary["percent_rmse"],
             val_mse=history["val_mse"][-1],
-            val_percent_rmse=val_summary["percent_rmse"],
             val_rmse=val_summary["rmse"],
+            val_percent_rmse=val_summary["percent_rmse"],
         )
         return model, result
 
@@ -157,52 +172,85 @@ class RegressionRun:
         best_dir = os.path.join(self.spec.output_root, "best")
         os.makedirs(best_dir, exist_ok=True)
 
-        X_all = np.vstack([self.spec.X_tr, self.spec.X_va, self.spec.X_te])
-        y_all = np.concatenate([self.spec.y_tr, self.spec.y_va, self.spec.y_te])
+        splits = [
+            ("train", self.spec.X_tr, self.spec.y_tr),
+            ("val", self.spec.X_va, self.spec.y_va),
+            ("test", self.spec.X_te, self.spec.y_te),
+        ]
 
-        test_pred = best_model.predict(self.spec.X_te).ravel()
-        test_summary = regression_summary(
-            self.spec.y_te, test_pred,
-            name=f"h{best.hidden} test",
-        )
-        
-        plot_model_output_superimposed(
-            best_model, self.spec.X_te, self.spec.y_te,
-            title=f"{self.spec.dataset_tag} - {self.spec.layer_label} x {best.hidden} - Test superimposed",
-            save_path=os.path.join(best_dir, "superimposed_test.png"),
-        )
-        
-        plot_scatter_target_vs_model(
-            self.spec.y_te, test_pred,
-            title=f"{self.spec.dataset_tag} - {self.spec.layer_label} x {best.hidden} - Test scatter",
-            save_path=os.path.join(best_dir, "scatter_test.png"),
-        )
-
-        _dump_json(os.path.join(best_dir, "metrics_test.json"), test_summary)
-
-        # Plot node surfaces if bivariate (2D input)
-        if self.spec.X_tr.shape[1] == 2:
-            hidden_layer_indices = [1, 2] if self.spec.layer_label == "2HL" else [1]
-            for li in hidden_layer_indices:
-                n_nodes = best_model.layer_sizes[li]
-                plot_node_surfaces(
-                    best_model, X_all, None, # No scatter of target for hidden layer surfaces
-                    layer_idx=li,
-                    node_indices=list(range(n_nodes)),
-                    title_prefix=f"{self.spec.dataset_tag} - best {self.spec.layer_label} x {best.hidden}",
-                    save_dir=best_dir,
-                    kind="hidden",
-                )
-
-            n_out = best_model.layer_sizes[-1]
-            plot_node_surfaces(
-                best_model, X_all, y_all,
-                layer_idx=best_model.n_layers,
-                node_indices=list(range(n_out)),
-                title_prefix=f"{self.spec.dataset_tag} - best {self.spec.layer_label} x {best.hidden}",
-                save_dir=best_dir,
-                kind="output",
+        for split_name, X_split, y_split in splits:
+            pred_split = best_model.predict(X_split).ravel()
+            summary_split = regression_summary(
+                y_split, pred_split,
+                name=f"h{best.hidden} {split_name}",
+            )
+            
+            plot_model_output_superimposed(
+                best_model, X_split, y_split,
+                title=f"{self.spec.dataset_tag} - {self.spec.layer_label} x {best.hidden} - {split_name.capitalize()} Superimposed",
+                save_path=os.path.join(best_dir, f"superimposed_{split_name}.png"),
+            )
+            
+            plot_scatter_target_vs_model(
+                y_split, pred_split,
+                title=f"{self.spec.dataset_tag} - {self.spec.layer_label} x {best.hidden} - {split_name.capitalize()} Scatter",
+                save_path=os.path.join(best_dir, f"scatter_{split_name}.png"),
             )
 
+            _dump_json(os.path.join(best_dir, f"metrics_{split_name}.json"), summary_split)
+
+        # Plot node surfaces/curves for each split
+        hidden_layer_indices = [1, 2] if self.spec.layer_label == "2HL" else [1]
+        if self.spec.X_tr.shape[1] == 2:
+            for split_name, X_split, y_split in splits:
+                split_dir = os.path.join(best_dir, split_name)
+                os.makedirs(split_dir, exist_ok=True)
+                for li in hidden_layer_indices:
+                    n_nodes = best_model.layer_sizes[li]
+                    plot_node_surfaces(
+                        best_model, X_split, None,
+                        layer_idx=li,
+                        node_indices=list(range(n_nodes)),
+                        title_prefix=f"{self.spec.dataset_tag} ({split_name}) - best {self.spec.layer_label} x {best.hidden}",
+                        save_dir=split_dir,
+                        kind="hidden",
+                    )
+
+                n_out = best_model.layer_sizes[-1]
+                plot_node_surfaces(
+                    best_model, X_split, y_split,
+                    layer_idx=best_model.n_layers,
+                    node_indices=list(range(n_out)),
+                    title_prefix=f"{self.spec.dataset_tag} ({split_name}) - best {self.spec.layer_label} x {best.hidden}",
+                    save_dir=split_dir,
+                    kind="output",
+                )
+        elif self.spec.X_tr.shape[1] == 1:
+            for split_name, X_split, y_split in splits:
+                split_dir = os.path.join(best_dir, split_name)
+                os.makedirs(split_dir, exist_ok=True)
+                for li in hidden_layer_indices:
+                    n_nodes = best_model.layer_sizes[li]
+                    plot_node_curves_1d(
+                        best_model, X_split, None,
+                        layer_idx=li,
+                        node_indices=list(range(n_nodes)),
+                        title_prefix=f"{self.spec.dataset_tag} ({split_name}) - best {self.spec.layer_label} x {best.hidden}",
+                        save_dir=split_dir,
+                        kind="hidden",
+                    )
+
+                n_out = best_model.layer_sizes[-1]
+                plot_node_curves_1d(
+                    best_model, X_split, y_split,
+                    layer_idx=best_model.n_layers,
+                    node_indices=list(range(n_out)),
+                    title_prefix=f"{self.spec.dataset_tag} ({split_name}) - best {self.spec.layer_label} x {best.hidden}",
+                    save_dir=split_dir,
+                    kind="output",
+                )
+
+        test_pred = best_model.predict(self.spec.X_te).ravel()
+        test_summary = regression_summary(self.spec.y_te, test_pred, name="test")
         print(f"  test -> rmse={test_summary['rmse']:.4f}  "
               f"%rmse={test_summary['percent_rmse']:.4f}")

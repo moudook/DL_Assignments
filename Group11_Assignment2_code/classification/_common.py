@@ -22,8 +22,15 @@ from shared.plotting import (
 @dataclass
 class ArchResult:
     hidden: int
+    train_mse: float
+    train_acc: float
     val_mse: float
     val_acc: float
+    precisions: np.ndarray
+    recalls: np.ndarray
+    f1_scores: np.ndarray
+    mean_precision: float
+    mean_recall: float
     mean_f1: float
     confusion_matrix: np.ndarray
 
@@ -71,12 +78,17 @@ def _metrics_to_json(summary: dict) -> dict:
 
 
 def _cv_table(results: list[ArchResult], best: ArchResult, tag: str, layer_label: str) -> str:
-    header = f"  {'h':>3s}  {'val_mse':>10s}  {'val_acc':>8s}  {'mean_f1':>8s}"
+    n_classes = len(results[0].f1_scores) if results else 0
+    f1_headers = "  ".join(f"F1_C{i:>d}" for i in range(n_classes))
+    header = f"  {'h':>3s}  {'val_mse':>10s}  {'val_acc':>8s}  {'m_prec':>8s}  {'m_rec':>8s}  {'mean_f1':>8s}  {f1_headers}"
     rule = "  " + "-" * (len(header) - 2)
-    body = "\n".join(
-        f"  {r.hidden:>3d}  {r.val_mse:>10.6f}  {r.val_acc:>8.4f}  {r.mean_f1:>8.4f}"
-        for r in results
-    )
+    
+    lines = []
+    for r in results:
+        f1_vals = "  ".join(f"{f:>4.4f}" for f in r.f1_scores)
+        lines.append(f"  {r.hidden:>3d}  {r.val_mse:>10.6f}  {r.val_acc:>8.4f}  {r.mean_precision:>8.4f}  {r.mean_recall:>8.4f}  {r.mean_f1:>8.4f}  {f1_vals}")
+    body = "\n".join(lines)
+    
     return (
         f"\n{tag} cross-validation ({layer_label}):\n"
         f"{header}\n{rule}\n{body}\n"
@@ -110,7 +122,8 @@ class ClassifierRun:
         if self.spec.layer_label == "1HL":
             return [n_in, h, n_out]
         if self.spec.layer_label == "2HL":
-            return [n_in, h, h, n_out]
+            h2 = max(1, h // 2)
+            return [n_in, h, h2, n_out]
         raise ValueError(f"Unsupported layer label: {self.spec.layer_label}")
 
     def _train_one(self, h: int) -> tuple[FCNN, ArchResult]:
@@ -132,6 +145,10 @@ class ClassifierRun:
             verbose=not self.spec.quiet,
         ).fit(self.spec.X_tr, y_tr_oh)
 
+        tr_summary = classification_summary(
+            self.spec.y_tr, model.predict(self.spec.X_tr),
+            name=f"h{h} train",
+        )
         val_summary = classification_summary(
             self.spec.y_va, model.predict(self.spec.X_va),
             name=f"h{h} validation",
@@ -147,13 +164,20 @@ class ClassifierRun:
             title=f"{self.spec.dataset_tag} - {self.spec.layer_label} x {h} - validation confusion matrix",
             save_path=os.path.join(arch_dir, "cm_val.png"),
         )
-        _dump_json(os.path.join(arch_dir, "metrics_val.json"),
-                   _metrics_to_json(val_summary))
+        _dump_json(os.path.join(arch_dir, "metrics_tr.json"), _metrics_to_json(tr_summary))
+        _dump_json(os.path.join(arch_dir, "metrics_val.json"), _metrics_to_json(val_summary))
 
         result = ArchResult(
             hidden=h,
+            train_mse=history["train_mse"][-1],
+            train_acc=tr_summary["accuracy"],
             val_mse=history["val_mse"][-1],
-            val_acc=history["val_acc"][-1],
+            val_acc=val_summary["accuracy"],
+            precisions=val_summary["precisions"],
+            recalls=val_summary["recalls"],
+            f1_scores=val_summary["f1_scores"],
+            mean_precision=val_summary["mean_precision"],
+            mean_recall=val_summary["mean_recall"],
             mean_f1=val_summary["mean_f1"],
             confusion_matrix=val_summary["confusion_matrix"],
         )
@@ -165,15 +189,19 @@ class ClassifierRun:
         best_dir = os.path.join(self.spec.output_root, "best")
         os.makedirs(best_dir, exist_ok=True)
 
-        X_all = np.vstack([self.spec.X_tr, self.spec.X_va, self.spec.X_te])
-        y_all = np.concatenate([self.spec.y_tr, self.spec.y_va, self.spec.y_te])
+        # Render decision regions for Train, Val, and Test
+        for split_name, X_split, y_split in [
+            ("train", self.spec.X_tr, self.spec.y_tr),
+            ("val", self.spec.X_va, self.spec.y_va),
+            ("test", self.spec.X_te, self.spec.y_te),
+        ]:
+            plot_decision_regions(
+                best_model, X_split, y_split,
+                title=f"{self.spec.dataset_tag} - {self.spec.layer_label} x {best.hidden} - decision regions ({split_name})",
+                save_path=os.path.join(best_dir, f"decision_regions_{split_name}.png"),
+            )
 
-        plot_decision_regions(
-            best_model, self.spec.X_tr, self.spec.y_tr,
-            title=f"{self.spec.dataset_tag} - {self.spec.layer_label} x {best.hidden} - decision regions (train data overlaid)",
-            save_path=os.path.join(best_dir, "decision_regions.png"),
-        )
-
+        # Test set summary and confusion matrix
         test_summary = classification_summary(
             self.spec.y_te, best_model.predict(self.spec.X_te),
             name=f"h{best.hidden} test",
@@ -183,30 +211,37 @@ class ClassifierRun:
             title=f"{self.spec.dataset_tag} - {self.spec.layer_label} x {best.hidden} - test confusion matrix",
             save_path=os.path.join(best_dir, "cm_test.png"),
         )
-        _dump_json(os.path.join(best_dir, "metrics_test.json"),
-                   _metrics_to_json(test_summary))
+        _dump_json(os.path.join(best_dir, "metrics_test.json"), _metrics_to_json(test_summary))
 
+        # Node output plots for Train, Val, Test splits
+        splits = [
+            ("train", self.spec.X_tr, self.spec.y_tr),
+            ("val", self.spec.X_va, self.spec.y_va),
+            ("test", self.spec.X_te, self.spec.y_te),
+        ]
         hidden_layer_indices = [1, 2] if self.spec.layer_label == "2HL" else [1]
-        for li in hidden_layer_indices:
-            n_nodes = best_model.layer_sizes[li]
-            plot_node_surfaces(
-                best_model, X_all, y_all,
-                layer_idx=li,
-                node_indices=list(range(n_nodes)),
-                title_prefix=f"{self.spec.dataset_tag} - best {self.spec.layer_label} x {best.hidden}",
-                save_dir=best_dir,
-                kind="hidden",
-            )
 
-        n_out = best_model.layer_sizes[-1]
-        plot_node_surfaces(
-            best_model, X_all, y_all,
-            layer_idx=best_model.n_layers,
-            node_indices=list(range(n_out)),
-            title_prefix=f"{self.spec.dataset_tag} - best {self.spec.layer_label} x {best.hidden}",
-            save_dir=best_dir,
-            kind="output",
-        )
+        for sname, X_s, y_s in splits:
+            for li in hidden_layer_indices:
+                n_nodes = best_model.layer_sizes[li]
+                plot_node_surfaces(
+                    best_model, X_s, y_s,
+                    layer_idx=li,
+                    node_indices=list(range(n_nodes)),
+                    title_prefix=f"{self.spec.dataset_tag} ({sname}) - best {self.spec.layer_label} x {best.hidden}",
+                    save_dir=os.path.join(best_dir, sname),
+                    kind="hidden",
+                )
+
+            n_out = best_model.layer_sizes[-1]
+            plot_node_surfaces(
+                best_model, X_s, y_s,
+                layer_idx=best_model.n_layers,
+                node_indices=list(range(n_out)),
+                title_prefix=f"{self.spec.dataset_tag} ({sname}) - best {self.spec.layer_label} x {best.hidden}",
+                save_dir=os.path.join(best_dir, sname),
+                kind="output",
+            )
 
         print(f"  test -> acc={test_summary['accuracy']:.4f}  "
               f"mean_f1={test_summary['mean_f1']:.4f}")
