@@ -1,0 +1,1797 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[margin=2.4cm]{geometry}
+\usepackage{graphicx}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{float}
+\usepackage{booktabs}
+\usepackage{amsmath,amssymb}
+\usepackage{xcolor}
+\usepackage{multirow}
+\usepackage{array}
+\usepackage[colorlinks=true,linkcolor=blue!60!black,citecolor=blue!60!black,urlcolor=blue!60!black]{hyperref}
+
+\title{\textbf{Assignment 2: Fully Connected Neural Networks (FCNN)}\\[1em]
+\large Classification and Regression from Scratch Using SGD\\[2em]
+\normalsize\textbf{Group 11} --- CS601T Deep Learning\\[1.5em]
+\normalsize
+CS24BT055\enspace Himanshu Nagwanshi\\
+CS24BT061\enspace Sidharth B\\
+CS24BT060\enspace Anshuman Rahul}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+\thispagestyle{empty}
+
+\begin{abstract}
+This report presents the design, implementation, and empirical evaluation of Fully Connected Neural Networks (FCNNs) built from scratch using NumPy, trained with Stochastic Gradient Descent (SGD) and squared error loss. In strict accordance with the assignment rubric, we report: (1) class-wise precision, recall, F-measure, mean metrics, accuracy, and confusion matrices for every evaluated architecture on the validation set, and for the best architecture on the test set; (2) RMSE and \%RMSE on training and validation data for all architectures, and on test data for the best architecture; (3) split-wise (train/val/test) decision regions, model-fit plots, scatter plots, and activation surfaces for every hidden and output node of the best architecture; (4) comparison with the single-neuron perceptron from Assignment~1. On the LS dataset, 1HL$\times$2 achieves 100\% test accuracy. On the NLS dataset, 2HL $16\times8$ achieves 100\% test accuracy. Regression achieves test \%RMSE of 3.20\% (univariate) and 1.42\% (bivariate 1HL), demonstrating the FCNN\'s superiority over any linear model.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+%===========================================================================
+\section{Model Architecture and Training Methodology}
+
+\subsection{Notation}
+Table~\ref{tab:notation} summarises the mathematical notation used throughout this report.
+\begin{table}[H]
+\centering
+\caption{Summary of mathematical notation used in this report.}
+\label{tab:notation}
+\begin{tabular}{lp{12cm}}
+\toprule
+Symbol & Definition \\
+\midrule
+$l$ & Layer index, where $l=0$ is the input and $l=L$ is the output layer \\
+$\mathbf{W}^{(l)}, \mathbf{b}^{(l)}$ & Weight matrix and bias vector for layer $l$ \\
+$\mathbf{z}^{(l)}$ & Pre-activation (weighted sum) vector for layer $l$ \\
+$\mathbf{a}^{(l)}$ & Post-activation output vector for layer $l$; $\mathbf{a}^{(0)} = \mathbf{x}$ (the input) \\
+$\phi^{(l)}(\cdot)$ & Activation function of layer $l$ \\
+$\sigma(z)$ & Logistic sigmoid function: $1 / (1 + e^{-z})$ \\
+$K$ & Number of output nodes (e.g., number of classes for classification) \\
+$y_k, \hat{y}_k$ & Ground-truth target and predicted output for the $k$-th output node \\
+$\mathcal{L}$ & Instantaneous squared error loss for a single training sample \\
+$\eta$ & Learning rate for stochastic gradient descent \\
+$\delta^{(l)}_j$ & Error signal (local gradient) for unit $j$ in layer $l$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Fully Connected Neural Network (FCNN)}
+Our FCNN supports arbitrary multi-layer feedforward topologies. Forward propagation through layer $l$ is defined as:
+\begin{equation}
+\mathbf{z}^{(l)} = \mathbf{a}^{(l-1)}\mathbf{W}^{(l)} + \mathbf{b}^{(l)}, \quad \mathbf{a}^{(l)} = \phi^{(l)}(\mathbf{z}^{(l)})
+\end{equation}
+For \textbf{classification}: hidden layers use the sigmoid activation function $\sigma(z)=1/(1+e^{-z})$; the output layer uses a \textbf{softmax} function, producing a normalised probability distribution over the $K=3$ classes. 
+For \textbf{regression}: hidden layers use the sigmoid activation; the output layer uses a \textbf{linear} (identity) activation function, i.e., $\phi^{(L)}(z) = z$. 
+Weights are initialised from a normal distribution $\mathcal{N}(0,\,1/\sqrt{n_{\text{in}}})$, where $n_{\text{in}}$ is the number of inputs to the layer.
+
+\subsection{SGD and Backpropagation}
+Online Stochastic Gradient Descent (SGD) updates the network parameters after each individual training sample. The instantaneous squared error loss for a single sample is defined as:
+\begin{equation}
+\mathcal{L} = \frac{1}{K}\sum_{k=1}^{K}(\hat{y}_k - y_k)^2
+\end{equation}
+where $\hat{y}_k$ is the model's prediction and $y_k$ is the target.
+
+During backpropagation, the error signal is propagated backwards. For the softmax output layer, the error signal is computed using the Jacobian of the softmax function. For sigmoid hidden units, the error signal for unit $j$ in layer $l$ is:
+\begin{equation}
+\delta^{(l)}_j = \left(\sum_k \delta^{(l+1)}_k w^{(l+1)}_{kj}\right) a^{(l)}_j (1 - a^{(l)}_j)
+\end{equation}
+where $w^{(l+1)}_{kj}$ is the weight connecting unit $j$ in layer $l$ to unit $k$ in layer $l+1$. The weights are updated via $\Delta w^{(l)}_{ji} = -\eta \, \delta^{(l)}_j a^{(l-1)}_i$.
+
+\subsection{Training Configuration}
+The hyperparameters common to all classification and regression experiments are listed in Table~\ref{tab:hyperparams}.
+\begin{table}[H]
+\centering
+\caption{Training hyperparameters.}
+\label{tab:hyperparams}
+\begin{tabular}{lll}
+\toprule
+Hyperparameter & Classification & Regression \\
+\midrule
+Output activation & Softmax & Linear \\
+Hidden activation & Sigmoid & Sigmoid \\
+Learning rate $\eta$ & 0.5 & 0.5 \\
+Max epochs & 800 & 800 \\
+Seed & 42 & 42 \\
+Weight init & $\mathcal{N}(0,1/\sqrt{n_{\text{in}}})$ & $\mathcal{N}(0,1/\sqrt{n_{\text{in}}})$ \\
+Train/Val/Test & 60/20/20 (stratified) & 60/20/20 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+%===========================================================================
+\section{Classification Tasks}
+
+\subsection{Dataset 1: Linearly Separable (LS) --- 1 Hidden Layer}
+
+The LS dataset contains 1,500 two-dimensional samples equally distributed across 3 classes (500 each). A 1HL architecture is evaluated. Hidden sizes swept: $h \in \{2,4,8,16,32\}$. Train/Val/Test: 900/300/300 (stratified, 100 per class per split).
+
+\subsubsection*{Validation Metrics Across All Architectures}
+
+\begin{table}[H]
+\centering
+\caption{Dataset 1 (LS): validation metrics for all 1HL architectures.}
+\label{tab:ls-val-metrics}
+\small
+\begin{tabular}{lrrrrr}
+\toprule
+Metric & $h=2$ & $h=4$ & $h=8$ & $h=16$ & $h=32$ \\
+\midrule
+Accuracy        & 1.0000 & 1.0000 & 1.0000 & 1.0000 & 1.0000 \\
+Precision -- C0 & 1.0000 & 1.0000 & 1.0000 & 1.0000 & 1.0000 \\
+Precision -- C1 & 1.0000 & 1.0000 & 1.0000 & 1.0000 & 1.0000 \\
+Precision -- C2 & 1.0000 & 1.0000 & 1.0000 & 1.0000 & 1.0000 \\
+Mean Precision  & 1.0000 & 1.0000 & 1.0000 & 1.0000 & 1.0000 \\
+Recall -- C0    & 1.0000 & 1.0000 & 1.0000 & 1.0000 & 1.0000 \\
+Recall -- C1    & 1.0000 & 1.0000 & 1.0000 & 1.0000 & 1.0000 \\
+Recall -- C2    & 1.0000 & 1.0000 & 1.0000 & 1.0000 & 1.0000 \\
+Mean Recall     & 1.0000 & 1.0000 & 1.0000 & 1.0000 & 1.0000 \\
+F-measure -- C0 & 1.0000 & 1.0000 & 1.0000 & 1.0000 & 1.0000 \\
+F-measure -- C1 & 1.0000 & 1.0000 & 1.0000 & 1.0000 & 1.0000 \\
+F-measure -- C2 & 1.0000 & 1.0000 & 1.0000 & 1.0000 & 1.0000 \\
+Mean F-measure  & 1.0000 & 1.0000 & 1.0000 & 1.0000 & 1.0000 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\centering
+\caption{Dataset 1 (LS): validation confusion matrix (identical across all architectures).}
+\label{tab:ls-val-cm}
+\begin{tabular}{lrrr}
+\toprule
+True Class & Pred.\ 0 & Pred.\ 1 & Pred.\ 2 \\
+\midrule
+Class 0 & 100 & 0 & 0 \\
+Class 1 & 0   & 100 & 0 \\
+Class 2 & 0   & 0 & 100 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+As shown in Table~\ref{tab:ls-val-metrics} and Table~\ref{tab:ls-val-cm}, all five architectures achieve perfect validation accuracy. The smallest ($h=2$) is selected as the best (fewest parameters). \textbf{Best: 1HL$\times$2}.
+
+\subsubsection*{Test Results for Best Architecture (1HL$\times$2)}
+
+\begin{table}[H]
+\centering
+\caption{Dataset 1 (LS): test metrics --- best architecture (1HL$\times$2).}
+\label{tab:ls-test-metrics}
+\begin{tabular}{lr}
+\toprule
+Metric & Value \\
+\midrule
+Accuracy        & 1.0000 \\
+Precision -- C0 & 1.0000 \\
+Precision -- C1 & 1.0000 \\
+Precision -- C2 & 1.0000 \\
+Mean Precision  & 1.0000 \\
+Recall -- C0    & 1.0000 \\
+Recall -- C1    & 1.0000 \\
+Recall -- C2    & 1.0000 \\
+Mean Recall     & 1.0000 \\
+F-measure -- C0 & 1.0000 \\
+F-measure -- C1 & 1.0000 \\
+F-measure -- C2 & 1.0000 \\
+Mean F-measure  & 1.0000 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\centering
+\caption{Dataset 1 (LS): test confusion matrix --- best architecture (1HL$\times$2).}
+\label{tab:ls-test-cm}
+\begin{tabular}{lrrr}
+\toprule
+True Class & Pred.\ 0 & Pred.\ 1 & Pred.\ 2 \\
+\midrule
+Class 0 & 100 & 0   & 0   \\
+Class 1 & 0   & 100 & 0   \\
+Class 2 & 0   & 0   & 100 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsubsection*{Error Convergence}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.65\linewidth]{outputs/classification/ls/h2/error_curve.png}
+    \caption{Dataset 1 (LS): error vs.\ epoch --- best architecture (1HL$\times$2).}
+\label{fig:ls-error}
+\end{figure}
+
+\subsubsection*{Decision Regions}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.6\textwidth]{outputs/classification/ls/best/decision_regions_train.png}
+    \caption{Dataset 1 (LS): decision regions --- best architecture (1HL$\times$2) on training data.}
+\label{fig:ls-decision}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.5\linewidth]{outputs/classification/ls/best/cm_test.png}
+    \caption{Dataset 1 (LS): test confusion matrix heatmap --- 1HL$\times$2.}
+\label{fig:ls-cm-heatmap}
+\end{figure}
+
+\subsubsection*{Node Output Surfaces --- All Nodes, Best Architecture (1HL$\times$2)}
+
+\begin{figure}[H]
+    \centering
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/ls/best/train/surface_hidden_l1_n0.png}
+        \caption{H1-N0 (Train)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/ls/best/val/surface_hidden_l1_n0.png}
+        \caption{H1-N0 (Val)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/ls/best/test/surface_hidden_l1_n0.png}
+        \caption{H1-N0 (Test)}
+    \end{subfigure}
+    \vspace{0.3cm}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/ls/best/train/surface_hidden_l1_n1.png}
+        \caption{H1-N1 (Train)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/ls/best/val/surface_hidden_l1_n1.png}
+        \caption{H1-N1 (Val)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/ls/best/test/surface_hidden_l1_n1.png}
+        \caption{H1-N1 (Test)}
+    \end{subfigure}
+    \vspace{0.3cm}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/ls/best/train/surface_output_l2_n0.png}
+        \caption{Out-N0 (Train)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/ls/best/val/surface_output_l2_n0.png}
+        \caption{Out-N0 (Val)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/ls/best/test/surface_output_l2_n0.png}
+        \caption{Out-N0 (Test)}
+    \end{subfigure}
+    \vspace{0.3cm}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/ls/best/train/surface_output_l2_n1.png}
+        \caption{Out-N1 (Train)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/ls/best/val/surface_output_l2_n1.png}
+        \caption{Out-N1 (Val)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/ls/best/test/surface_output_l2_n1.png}
+        \caption{Out-N1 (Test)}
+    \end{subfigure}
+    \caption{Dataset 1 (LS) 1HL$\times$2: Node outputs (Part 1).}
+\label{fig:ls-nodes1}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/ls/best/train/surface_output_l2_n2.png}
+        \caption{Out-N2 (Train)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/ls/best/val/surface_output_l2_n2.png}
+        \caption{Out-N2 (Val)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/ls/best/test/surface_output_l2_n2.png}
+        \caption{Out-N2 (Test)}
+    \end{subfigure}
+    \caption{Dataset 1 (LS) 1HL$\times$2: Node outputs (Part 2).}
+\label{fig:ls-nodes2}
+\end{figure}
+
+\subsubsection*{Analysis and Inferences}
+\begin{itemize}
+    \item As seen in Table~\ref{tab:ls-test-metrics} and Table~\ref{tab:ls-test-cm}, all five architectures achieve 100\% validation and test accuracy, consistent with the large geometric separation of the three Gaussian clusters. Even the minimal 2-node hidden layer suffices.
+    \item The error curve (Fig.~\ref{fig:ls-error}) drops steeply and reaches near-zero within the first 50 epochs.
+    \item Hidden node surfaces (Fig.~\ref{fig:ls-nodes1} and Fig.~\ref{fig:ls-nodes2}) show smooth sigmoid hyperplane projections. Softmax output nodes form clear high-activation regions ($\approx 1$) over each target class.
+    \item Decision regions (Fig.~\ref{fig:ls-decision}) and node surfaces are consistent across train/val/test, confirming perfect generalisation, and the test confusion matrix heatmap in Fig.~\ref{fig:ls-cm-heatmap} shows no misclassifications.
+\end{itemize}
+
+%===========================================================================
+\subsection{Dataset 2: Non-Linearly Separable (NLS) --- 2 Hidden Layers}
+
+The NLS dataset contains 1,700 two-dimensional samples across 3 classes (500/500/700). A 2HL bottleneck architecture is evaluated: first layer $h$, second layer $h/2$; $h \in \{2,4,8,16,32\}$ giving $(2\times1),(4\times2),(8\times4),(16\times8),(32\times16)$. Train/Val/Test: 1020/340/340 (stratified). The data exhibits concentric ring structure requiring non-linear boundaries.
+
+\subsubsection*{Validation Metrics Across All Architectures}
+
+\begin{table}[H]
+\centering
+\caption{Dataset 2 (NLS): validation metrics for all 2HL architectures.}
+\label{tab:nls-val-metrics}
+\small
+\begin{tabular}{lrrrrr}
+\toprule
+Metric & $2\times1$ & $4\times2$ & $8\times4$ & $16\times8$ & $32\times16$ \\
+\midrule
+Accuracy        & 0.6559 & 0.8971 & 0.9971 & \textbf{1.0000} & 1.0000 \\
+Precision -- C0 & 0.7007 & 0.9429 & 1.0000 & 1.0000 & 1.0000 \\
+Precision -- C1 & 0.0000 & 0.9851 & 1.0000 & 1.0000 & 1.0000 \\
+Precision -- C2 & 0.6256 & 0.8333 & 0.9929 & 1.0000 & 1.0000 \\
+Mean Precision  & 0.4421 & 0.9204 & 0.9976 & 1.0000 & 1.0000 \\
+Recall -- C0    & 0.9600 & 0.9900 & 1.0000 & 1.0000 & 1.0000 \\
+Recall -- C1    & 0.0000 & 0.6600 & 0.9900 & 1.0000 & 1.0000 \\
+Recall -- C2    & 0.9071 & 1.0000 & 1.0000 & 1.0000 & 1.0000 \\
+Mean Recall     & 0.6224 & 0.8833 & 0.9967 & 1.0000 & 1.0000 \\
+F-measure -- C0 & 0.8101 & 0.9659 & 1.0000 & 1.0000 & 1.0000 \\
+F-measure -- C1 & 0.0000 & 0.7904 & 0.9950 & 1.0000 & 1.0000 \\
+F-measure -- C2 & 0.7405 & 0.9091 & 0.9964 & 1.0000 & 1.0000 \\
+Mean F-measure  & 0.5169 & 0.8885 & 0.9971 & 1.0000 & 1.0000 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\centering
+\caption{Dataset 2 (NLS): validation confusion matrices for all architectures.}
+\label{tab:nls-val-cm}
+\small
+\begin{tabular}{llrrr}
+\toprule
+Architecture & True Class & Pred.\ 0 & Pred.\ 1 & Pred.\ 2 \\
+\midrule
+\multirow{3}{*}{$2\times1$}   & Class 0 & 96  & 0   & 4   \\
+                               & Class 1 & 28  & 0   & 72  \\
+                               & Class 2 & 13  & 0   & 127 \\
+\midrule
+\multirow{3}{*}{$4\times2$}   & Class 0 & 99  & 1   & 0   \\
+                               & Class 1 & 6   & 66  & 28  \\
+                               & Class 2 & 0   & 0   & 140 \\
+\midrule
+\multirow{3}{*}{$8\times4$}   & Class 0 & 100 & 0   & 0   \\
+                               & Class 1 & 0   & 99  & 1   \\
+                               & Class 2 & 0   & 0   & 140 \\
+\midrule
+\multirow{3}{*}{$16\times8$}  & Class 0 & 100 & 0   & 0   \\
+                               & Class 1 & 0   & 100 & 0   \\
+                               & Class 2 & 0   & 0   & 140 \\
+\midrule
+\multirow{3}{*}{$32\times16$} & Class 0 & 100 & 0   & 0   \\
+                               & Class 1 & 0   & 100 & 0   \\
+                               & Class 2 & 0   & 0   & 140 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+As shown in Table~\ref{tab:nls-val-metrics} and Table~\ref{tab:nls-val-cm}, the $16\times8$ architecture achieves perfect validation accuracy (100\%) with fewer parameters than $32\times16$. \textbf{Best: 2HL $16\times8$}.
+
+\subsubsection*{Test Results for Best Architecture (2HL $16\times8$)}
+
+\begin{table}[H]
+\centering
+\caption{Dataset 2 (NLS): test metrics --- best architecture (2HL $16\times8$).}
+\label{tab:nls-test-metrics}
+\begin{tabular}{lr}
+\toprule
+Metric & Value \\
+\midrule
+Accuracy        & 1.0000 \\
+Precision -- C0 & 1.0000 \\
+Precision -- C1 & 1.0000 \\
+Precision -- C2 & 1.0000 \\
+Mean Precision  & 1.0000 \\
+Recall -- C0    & 1.0000 \\
+Recall -- C1    & 1.0000 \\
+Recall -- C2    & 1.0000 \\
+Mean Recall     & 1.0000 \\
+F-measure -- C0 & 1.0000 \\
+F-measure -- C1 & 1.0000 \\
+F-measure -- C2 & 1.0000 \\
+Mean F-measure  & 1.0000 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\centering
+\caption{Dataset 2 (NLS): test confusion matrix --- best architecture (2HL $16\times8$). All 340 test samples correctly classified.}
+\label{tab:nls-test-cm}
+\begin{tabular}{lrrr}
+\toprule
+True Class & Pred.\ 0 & Pred.\ 1 & Pred.\ 2 \\
+\midrule
+Class 0 & 100 & 0   & 0   \\
+Class 1 & 0   & 100 & 0   \\
+Class 2 & 0   & 0   & 140 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsubsection*{Error Convergence}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.65\linewidth]{outputs/classification/nls/h16/error_curve.png}
+    \caption{Dataset 2 (NLS): error vs.\ epoch --- best architecture (2HL $16\times8$).}
+\label{fig:nls-error}
+\end{figure}
+
+\subsubsection*{Decision Regions}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.6\textwidth]{outputs/classification/nls/best/decision_regions_train.png}
+    \caption{Dataset 2 (NLS): decision regions --- best architecture (2HL $16\times8$) on training data. The network learns concentric non-linear boundaries separating all three ring-structured classes.}
+\label{fig:nls-decision}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.5\linewidth]{outputs/classification/nls/best/cm_test.png}
+    \caption{Dataset 2 (NLS): test confusion matrix heatmap --- best architecture (2HL $16\times8$).}
+\label{fig:nls-cm-heatmap}
+\end{figure}
+
+\subsubsection*{Node Output Surfaces --- All Nodes, Best Architecture (2HL $16\times8$)}
+
+\begin{figure}[H]
+    \centering
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/train/surface_hidden_l1_n0.png}
+        \caption{H1-N0 (Train)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/val/surface_hidden_l1_n0.png}
+        \caption{H1-N0 (Val)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/test/surface_hidden_l1_n0.png}
+        \caption{H1-N0 (Test)}
+    \end{subfigure}
+    \vspace{0.3cm}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/train/surface_hidden_l1_n1.png}
+        \caption{H1-N1 (Train)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/val/surface_hidden_l1_n1.png}
+        \caption{H1-N1 (Val)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/test/surface_hidden_l1_n1.png}
+        \caption{H1-N1 (Test)}
+    \end{subfigure}
+    \vspace{0.3cm}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/train/surface_hidden_l1_n2.png}
+        \caption{H1-N2 (Train)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/val/surface_hidden_l1_n2.png}
+        \caption{H1-N2 (Val)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/test/surface_hidden_l1_n2.png}
+        \caption{H1-N2 (Test)}
+    \end{subfigure}
+    \vspace{0.3cm}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/train/surface_hidden_l1_n3.png}
+        \caption{H1-N3 (Train)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/val/surface_hidden_l1_n3.png}
+        \caption{H1-N3 (Val)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/test/surface_hidden_l1_n3.png}
+        \caption{H1-N3 (Test)}
+    \end{subfigure}
+    \caption{Dataset 2 (NLS) 2HL $16\times8$: Node outputs (Part 1).}
+\label{fig:nls-nodes1}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/train/surface_hidden_l1_n4.png}
+        \caption{H1-N4 (Train)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/val/surface_hidden_l1_n4.png}
+        \caption{H1-N4 (Val)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/test/surface_hidden_l1_n4.png}
+        \caption{H1-N4 (Test)}
+    \end{subfigure}
+    \vspace{0.3cm}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/train/surface_hidden_l1_n5.png}
+        \caption{H1-N5 (Train)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/val/surface_hidden_l1_n5.png}
+        \caption{H1-N5 (Val)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/test/surface_hidden_l1_n5.png}
+        \caption{H1-N5 (Test)}
+    \end{subfigure}
+    \vspace{0.3cm}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/train/surface_hidden_l1_n6.png}
+        \caption{H1-N6 (Train)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/val/surface_hidden_l1_n6.png}
+        \caption{H1-N6 (Val)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/test/surface_hidden_l1_n6.png}
+        \caption{H1-N6 (Test)}
+    \end{subfigure}
+    \vspace{0.3cm}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/train/surface_hidden_l1_n7.png}
+        \caption{H1-N7 (Train)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/val/surface_hidden_l1_n7.png}
+        \caption{H1-N7 (Val)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/test/surface_hidden_l1_n7.png}
+        \caption{H1-N7 (Test)}
+    \end{subfigure}
+    \caption{Dataset 2 (NLS) 2HL $16\times8$: Node outputs (Part 2).}
+\label{fig:nls-nodes2}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/train/surface_hidden_l1_n8.png}
+        \caption{H1-N8 (Train)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/val/surface_hidden_l1_n8.png}
+        \caption{H1-N8 (Val)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/test/surface_hidden_l1_n8.png}
+        \caption{H1-N8 (Test)}
+    \end{subfigure}
+    \vspace{0.3cm}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/train/surface_hidden_l1_n9.png}
+        \caption{H1-N9 (Train)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/val/surface_hidden_l1_n9.png}
+        \caption{H1-N9 (Val)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/test/surface_hidden_l1_n9.png}
+        \caption{H1-N9 (Test)}
+    \end{subfigure}
+    \vspace{0.3cm}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/train/surface_hidden_l1_n10.png}
+        \caption{H1-N10 (Train)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/val/surface_hidden_l1_n10.png}
+        \caption{H1-N10 (Val)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/test/surface_hidden_l1_n10.png}
+        \caption{H1-N10 (Test)}
+    \end{subfigure}
+    \vspace{0.3cm}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/train/surface_hidden_l1_n11.png}
+        \caption{H1-N11 (Train)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/val/surface_hidden_l1_n11.png}
+        \caption{H1-N11 (Val)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/test/surface_hidden_l1_n11.png}
+        \caption{H1-N11 (Test)}
+    \end{subfigure}
+    \caption{Dataset 2 (NLS) 2HL $16\times8$: Node outputs (Part 3).}
+\label{fig:nls-nodes3}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/train/surface_hidden_l1_n12.png}
+        \caption{H1-N12 (Train)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/val/surface_hidden_l1_n12.png}
+        \caption{H1-N12 (Val)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/test/surface_hidden_l1_n12.png}
+        \caption{H1-N12 (Test)}
+    \end{subfigure}
+    \vspace{0.3cm}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/train/surface_hidden_l1_n13.png}
+        \caption{H1-N13 (Train)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/val/surface_hidden_l1_n13.png}
+        \caption{H1-N13 (Val)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/test/surface_hidden_l1_n13.png}
+        \caption{H1-N13 (Test)}
+    \end{subfigure}
+    \vspace{0.3cm}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/train/surface_hidden_l1_n14.png}
+        \caption{H1-N14 (Train)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/val/surface_hidden_l1_n14.png}
+        \caption{H1-N14 (Val)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/test/surface_hidden_l1_n14.png}
+        \caption{H1-N14 (Test)}
+    \end{subfigure}
+    \vspace{0.3cm}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/train/surface_hidden_l1_n15.png}
+        \caption{H1-N15 (Train)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/val/surface_hidden_l1_n15.png}
+        \caption{H1-N15 (Val)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/test/surface_hidden_l1_n15.png}
+        \caption{H1-N15 (Test)}
+    \end{subfigure}
+    \caption{Dataset 2 (NLS) 2HL $16\times8$: Node outputs (Part 4).}
+\label{fig:nls-nodes4}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/train/surface_hidden_l2_n0.png}
+        \caption{H2-N0 (Train)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/val/surface_hidden_l2_n0.png}
+        \caption{H2-N0 (Val)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/test/surface_hidden_l2_n0.png}
+        \caption{H2-N0 (Test)}
+    \end{subfigure}
+    \vspace{0.3cm}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/train/surface_hidden_l2_n1.png}
+        \caption{H2-N1 (Train)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/val/surface_hidden_l2_n1.png}
+        \caption{H2-N1 (Val)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/test/surface_hidden_l2_n1.png}
+        \caption{H2-N1 (Test)}
+    \end{subfigure}
+    \vspace{0.3cm}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/train/surface_hidden_l2_n2.png}
+        \caption{H2-N2 (Train)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/val/surface_hidden_l2_n2.png}
+        \caption{H2-N2 (Val)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/test/surface_hidden_l2_n2.png}
+        \caption{H2-N2 (Test)}
+    \end{subfigure}
+    \vspace{0.3cm}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/train/surface_hidden_l2_n3.png}
+        \caption{H2-N3 (Train)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/val/surface_hidden_l2_n3.png}
+        \caption{H2-N3 (Val)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/test/surface_hidden_l2_n3.png}
+        \caption{H2-N3 (Test)}
+    \end{subfigure}
+    \caption{Dataset 2 (NLS) 2HL $16\times8$: Node outputs (Part 5).}
+\label{fig:nls-nodes5}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/train/surface_hidden_l2_n4.png}
+        \caption{H2-N4 (Train)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/val/surface_hidden_l2_n4.png}
+        \caption{H2-N4 (Val)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/test/surface_hidden_l2_n4.png}
+        \caption{H2-N4 (Test)}
+    \end{subfigure}
+    \vspace{0.3cm}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/train/surface_hidden_l2_n5.png}
+        \caption{H2-N5 (Train)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/val/surface_hidden_l2_n5.png}
+        \caption{H2-N5 (Val)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/test/surface_hidden_l2_n5.png}
+        \caption{H2-N5 (Test)}
+    \end{subfigure}
+    \vspace{0.3cm}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/train/surface_hidden_l2_n6.png}
+        \caption{H2-N6 (Train)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/val/surface_hidden_l2_n6.png}
+        \caption{H2-N6 (Val)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/test/surface_hidden_l2_n6.png}
+        \caption{H2-N6 (Test)}
+    \end{subfigure}
+    \vspace{0.3cm}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/train/surface_hidden_l2_n7.png}
+        \caption{H2-N7 (Train)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/val/surface_hidden_l2_n7.png}
+        \caption{H2-N7 (Val)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/test/surface_hidden_l2_n7.png}
+        \caption{H2-N7 (Test)}
+    \end{subfigure}
+    \caption{Dataset 2 (NLS) 2HL $16\times8$: Node outputs (Part 6).}
+\label{fig:nls-nodes6}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/train/surface_output_l3_n0.png}
+        \caption{Out-N0 (Train)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/val/surface_output_l3_n0.png}
+        \caption{Out-N0 (Val)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/test/surface_output_l3_n0.png}
+        \caption{Out-N0 (Test)}
+    \end{subfigure}
+    \vspace{0.3cm}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/train/surface_output_l3_n1.png}
+        \caption{Out-N1 (Train)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/val/surface_output_l3_n1.png}
+        \caption{Out-N1 (Val)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/test/surface_output_l3_n1.png}
+        \caption{Out-N1 (Test)}
+    \end{subfigure}
+    \vspace{0.3cm}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/train/surface_output_l3_n2.png}
+        \caption{Out-N2 (Train)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/val/surface_output_l3_n2.png}
+        \caption{Out-N2 (Val)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/classification/nls/best/test/surface_output_l3_n2.png}
+        \caption{Out-N2 (Test)}
+    \end{subfigure}
+    \caption{Dataset 2 (NLS) 2HL $16\times8$: Node outputs (Part 7).}
+\label{fig:nls-nodes7}
+\end{figure}
+
+\subsubsection*{Analysis and Inferences}
+\begin{itemize}
+    \item From Table~\ref{tab:nls-val-metrics}, $2\times1$ achieves only 65.6\% validation accuracy; insufficient units cannot construct curved annular boundaries.
+    \item $4\times2$ (89.7\%) partially separates classes but fails on Class~1 (middle ring), as confirmed by the confusion matrix in Table~\ref{tab:nls-val-cm}.
+    \item $8\times4$ achieves 99.7\% with 1 error; $16\times8$ achieves 100\% on both validation (Table~\ref{tab:nls-val-metrics}) and test (Table~\ref{tab:nls-test-metrics} and Table~\ref{tab:nls-test-cm}).
+    \item The 2HL bottleneck ($h_1>h_2$) forces compressed representations in the second hidden layer, acting as a learned feature extractor over the non-linear basis from the first layer; the resulting boundaries are visible in the decision-region plot of Fig.~\ref{fig:nls-decision} and the error curve of Fig.~\ref{fig:nls-error}.
+    \item All output softmax surfaces (Fig.~\ref{fig:nls-nodes1} through Fig.~\ref{fig:nls-nodes7}) show near-binary activation fields: the correct class region approaches 1.0 and the rest approach 0.0, with the test confusion matrix heatmap of Fig.~\ref{fig:nls-cm-heatmap} showing zero misclassifications.
+\end{itemize}
+
+\subsection{Comparison with Assignment 1: Classification}
+
+\begin{table}[H]
+\centering
+\caption{Classification: Assignment~1 (single-neuron OvO perceptron) vs.\ Assignment~2 (FCNN).}
+\label{tab:class-a1-a2}
+\begin{tabular}{lllr}
+\toprule
+Dataset & Model & Approach & Test Accuracy \\
+\midrule
+Dataset 1 (LS)  & Single Neuron (A1) & OvO, 3 binary perceptrons & 1.0000 \\
+                & FCNN (A2, 1HL$\times$2) & Unified 3-output softmax network & 1.0000 \\
+\midrule
+Dataset 2 (NLS) & Single Neuron (A1) & OvO (linear boundaries) & 0.2660 \\
+                & FCNN (A2, 2HL $16\times8$) & Two hidden layers, sigmoid+softmax & 1.0000 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+As Table~\ref{tab:class-a1-a2} shows, on the NLS dataset the single-neuron model achieves only 26.6\% (below random chance), as a linear boundary cannot isolate any concentric ring. The FCNN achieves 100\% by composing sigmoid activations to construct circular decision boundaries.
+
+%===========================================================================
+\section{Regression Tasks}
+
+\subsection{Evaluation Metrics}
+
+\begin{equation}
+\text{RMSE} = \sqrt{\frac{1}{N}\sum_{i=1}^{N}(y_i - \hat{y}_i)^2}, \qquad \%\text{RMSE} = \frac{\text{RMSE}}{y_{\max} - y_{\min}} \times 100
+\end{equation}
+
+\subsection{Dataset 1: Univariate Regression ($d=1$)}
+
+Dataset: 1,000 samples, single input $x$, continuous target $y$. 1HL architecture; $h \in \{2,4,8,16,32\}$. Train/Val/Test: 600/200/200.
+
+\subsubsection*{RMSE and \%RMSE for All Architectures}
+
+\begin{table}[H]
+\centering
+\caption{Univariate regression: RMSE and \%RMSE on training and validation data. Bold = best (selected) architecture.}
+\label{tab:uni-trainval}
+\begin{tabular}{lrrrr}
+\toprule
+Architecture & Train RMSE & Train \%RMSE & Val RMSE & Val \%RMSE \\
+\midrule
+\textbf{1HL$\times$2}  & \textbf{0.0760} & \textbf{2.960\%} & \textbf{0.0699} & \textbf{2.814\%} \\
+1HL$\times$4  & 0.0998 & 3.884\% & 0.0928 & 3.734\% \\
+1HL$\times$8  & 0.0938 & 3.653\% & 0.0882 & 3.550\% \\
+1HL$\times$16 & 0.1437 & 5.592\% & 0.1401 & 5.638\% \\
+1HL$\times$32 & 0.1179 & 4.589\% & 0.1121 & 4.510\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\centering
+\caption{Univariate regression: RMSE and \%RMSE on test data --- best architecture (1HL$\times$2).}
+\label{tab:uni-test}
+\begin{tabular}{lrr}
+\toprule
+Split & RMSE & \%RMSE \\
+\midrule
+Train      & 0.0760 & 2.960\% \\
+Validation & 0.0699 & 2.814\% \\
+Test       & 0.0738 & 3.198\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+As reported in Table~\ref{tab:uni-trainval}, 1HL$\times$2 attains the lowest validation \%RMSE and is selected as the best architecture; Table~\ref{tab:uni-test} shows it generalises well, reaching a test \%RMSE of 3.198\%.
+
+\subsubsection*{Error Convergence}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.65\linewidth]{outputs/regression/univariate/h2/error_curve.png}
+    \caption{Univariate regression: error vs.\ epoch --- best architecture (1HL$\times$2).}
+\label{fig:uni-error}
+\end{figure}
+
+\subsubsection*{Model Output Superimposed on Target}
+
+\begin{figure}[H]
+    \centering
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/univariate/best/superimposed_train.png}
+        \caption{Training}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/univariate/best/superimposed_val.png}
+        \caption{Validation}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/univariate/best/superimposed_test.png}
+        \caption{Test}
+    \end{subfigure}
+    \caption{Univariate regression: model output superimposed on target --- 1HL$\times$2.}
+\label{fig:uni-superimposed}
+\end{figure}
+
+\subsubsection*{Scatter Plot: Target vs.\ Model Output}
+
+\begin{figure}[H]
+    \centering
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/univariate/best/scatter_train.png}
+        \caption{Training}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/univariate/best/scatter_val.png}
+        \caption{Validation}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/univariate/best/scatter_test.png}
+        \caption{Test}
+    \end{subfigure}
+    \caption{Univariate regression: scatter plots of target (x-axis) vs.\ model output (y-axis) --- 1HL$\times$2.}
+\label{fig:uni-scatter}
+\end{figure}
+
+\subsubsection*{Node Output Curves --- All Nodes, Best Architecture (1HL$\times$2)}
+
+\begin{figure}[H]
+    \centering
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/univariate/best/train/curve_hidden_l1_n0.png}
+        \caption{H1-N0 (Train)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/univariate/best/val/curve_hidden_l1_n0.png}
+        \caption{H1-N0 (Val)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/univariate/best/test/curve_hidden_l1_n0.png}
+        \caption{H1-N0 (Test)}
+    \end{subfigure}
+    \vspace{0.3cm}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/univariate/best/train/curve_hidden_l1_n1.png}
+        \caption{H1-N1 (Train)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/univariate/best/val/curve_hidden_l1_n1.png}
+        \caption{H1-N1 (Val)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/univariate/best/test/curve_hidden_l1_n1.png}
+        \caption{H1-N1 (Test)}
+    \end{subfigure}
+    \vspace{0.3cm}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/univariate/best/train/curve_output_l2_n0.png}
+        \caption{Out-N0 (Train)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/univariate/best/val/curve_output_l2_n0.png}
+        \caption{Out-N0 (Val)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/univariate/best/test/curve_output_l2_n0.png}
+        \caption{Out-N0 (Test)}
+    \end{subfigure}
+    \caption{Univariate Regression 1HL$\times$2: Node outputs.}
+\label{fig:uni-nodes}
+\end{figure}
+
+%===========================================================================
+\subsection{Dataset 2: Bivariate Regression ($d=2$)}
+
+Dataset: 10,201 samples on a 101$\times$101 grid, inputs $x_1,x_2$, continuous target $y$. Both \textbf{1HL and 2HL} architectures are evaluated as required by the rubric. $h \in \{2,4,8,16,32\}$; for 2HL the second layer is $h/2$. Train/Val/Test: 6120/2040/2041.
+
+\subsubsection*{RMSE and \%RMSE for All Architectures}
+
+\begin{table}[H]
+\centering
+\caption{Bivariate regression: RMSE and \%RMSE on training and validation data for all 1HL and 2HL architectures.}
+\label{tab:biv-trainval}
+\small
+\begin{tabular}{llrrrr}
+\toprule
+Variant & Arch. & Train RMSE & Train \%RMSE & Val RMSE & Val \%RMSE \\
+\midrule
+\multirow{5}{*}{1HL}
+ & $h=2$   & 0.0833 & 2.038\% & 0.0846 & 2.129\% \\
+ & $h=4$   & 0.0791 & 1.934\% & 0.0816 & 2.053\% \\
+ & $h=8$   & 0.0635 & 1.551\% & 0.0660 & 1.661\% \\
+ & \textbf{$h=16$} & \textbf{0.0571} & \textbf{1.396\%} & \textbf{0.0576} & \textbf{1.448\%} \\
+ & $h=32$  & 0.0591 & 1.446\% & 0.0592 & 1.489\% \\
+\midrule
+\multirow{5}{*}{2HL}
+ & $2\times1$   & 0.3358 & 8.209\% & 0.3365 & 8.464\% \\
+ & $4\times2$   & 0.0652 & 1.594\% & 0.0677 & 1.702\% \\
+ & $8\times4$   & 0.0672 & 1.644\% & 0.0687 & 1.728\% \\
+ & \textbf{$16\times8$} & \textbf{0.0586} & \textbf{1.433\%} & \textbf{0.0596} & \textbf{1.499\%} \\
+ & $32\times16$ & 0.0688 & 1.682\% & 0.0662 & 1.664\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\centering
+\caption{Bivariate regression: test RMSE and \%RMSE --- best architectures.}
+\label{tab:biv-test}
+\begin{tabular}{llrr}
+\toprule
+Variant & Best Arch. & Test RMSE & Test \%RMSE \\
+\midrule
+1HL & $h=16$     & 0.0569 & 1.417\% \\
+2HL & $16\times8$ & 0.0585 & 1.457\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+As Table~\ref{tab:biv-trainval} shows, $h=16$ (1HL) and $16\times8$ (2HL) achieve the lowest validation \%RMSE among their respective variants and are carried forward as the best architectures; Table~\ref{tab:biv-test} confirms both generalise well, with test \%RMSE around 1.4\% for each.
+
+\subsubsection*{Error Convergence}
+
+\begin{figure}[H]
+    \centering
+    \begin{subfigure}[b]{0.48\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/1hl/h16/error_curve.png}
+        \caption{1HL$\times$16}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.48\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/h16/error_curve.png}
+        \caption{2HL $16\times8$}
+    \end{subfigure}
+    \caption{Bivariate regression: error vs.\ epoch for best 1HL and 2HL architectures.}
+\label{fig:biv-error}
+\end{figure}
+
+\subsubsection*{Model Output Superimposed on Target}
+
+\begin{figure}[H]
+    \centering
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/superimposed_train.png}
+        \caption{Train (2HL)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/superimposed_val.png}
+        \caption{Val (2HL)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/superimposed_test.png}
+        \caption{Test (2HL)}
+    \end{subfigure}
+    \caption{Bivariate regression (2HL $16\times8$): 3D model output surface superimposed on target.}
+\label{fig:biv-superimposed-2hl}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/1hl/best/superimposed_train.png}
+        \caption{Train (1HL)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/1hl/best/superimposed_val.png}
+        \caption{Val (1HL)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/1hl/best/superimposed_test.png}
+        \caption{Test (1HL)}
+    \end{subfigure}
+    \caption{Bivariate regression (1HL$\times$16): 3D model output surface superimposed on target.}
+\label{fig:biv-superimposed-1hl}
+\end{figure}
+
+\subsubsection*{Scatter Plots: Target vs.\ Model Output}
+
+\begin{figure}[H]
+    \centering
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/scatter_train.png}
+        \caption{Train (2HL)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/scatter_val.png}
+        \caption{Val (2HL)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/scatter_test.png}
+        \caption{Test (2HL)}
+    \end{subfigure}
+    \caption{Bivariate regression (2HL $16\times8$): scatter plots of target vs.\ model output.}
+\label{fig:biv-scatter-2hl}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/1hl/best/scatter_train.png}
+        \caption{Train (1HL)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/1hl/best/scatter_val.png}
+        \caption{Val (1HL)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/1hl/best/scatter_test.png}
+        \caption{Test (1HL)}
+    \end{subfigure}
+    \caption{Bivariate regression (1HL$\times$16): scatter plots of target vs.\ model output.}
+\label{fig:biv-scatter-1hl}
+\end{figure}
+
+\subsubsection*{Node Output Surfaces --- All Nodes, Best Architectures (1HL and 2HL)}
+
+\begin{figure}[H]
+    \centering
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/train/surface_hidden_l1_n0.png}
+        \caption{H1-N0 (Train)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/val/surface_hidden_l1_n0.png}
+        \caption{H1-N0 (Val)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/test/surface_hidden_l1_n0.png}
+        \caption{H1-N0 (Test)}
+    \end{subfigure}
+    \vspace{0.3cm}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/train/surface_hidden_l1_n1.png}
+        \caption{H1-N1 (Train)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/val/surface_hidden_l1_n1.png}
+        \caption{H1-N1 (Val)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/test/surface_hidden_l1_n1.png}
+        \caption{H1-N1 (Test)}
+    \end{subfigure}
+    \vspace{0.3cm}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/train/surface_hidden_l1_n2.png}
+        \caption{H1-N2 (Train)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/val/surface_hidden_l1_n2.png}
+        \caption{H1-N2 (Val)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/test/surface_hidden_l1_n2.png}
+        \caption{H1-N2 (Test)}
+    \end{subfigure}
+    \vspace{0.3cm}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/train/surface_hidden_l1_n3.png}
+        \caption{H1-N3 (Train)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/val/surface_hidden_l1_n3.png}
+        \caption{H1-N3 (Val)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/test/surface_hidden_l1_n3.png}
+        \caption{H1-N3 (Test)}
+    \end{subfigure}
+    \caption{Bivariate Regression 2HL $16\times8$: Node outputs (Part 1).}
+\label{fig:biv-nodes-2hl-1}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/train/surface_hidden_l1_n4.png}
+        \caption{H1-N4 (Train)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/val/surface_hidden_l1_n4.png}
+        \caption{H1-N4 (Val)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/test/surface_hidden_l1_n4.png}
+        \caption{H1-N4 (Test)}
+    \end{subfigure}
+    \vspace{0.3cm}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/train/surface_hidden_l1_n5.png}
+        \caption{H1-N5 (Train)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/val/surface_hidden_l1_n5.png}
+        \caption{H1-N5 (Val)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/test/surface_hidden_l1_n5.png}
+        \caption{H1-N5 (Test)}
+    \end{subfigure}
+    \vspace{0.3cm}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/train/surface_hidden_l1_n6.png}
+        \caption{H1-N6 (Train)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/val/surface_hidden_l1_n6.png}
+        \caption{H1-N6 (Val)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/test/surface_hidden_l1_n6.png}
+        \caption{H1-N6 (Test)}
+    \end{subfigure}
+    \vspace{0.3cm}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/train/surface_hidden_l1_n7.png}
+        \caption{H1-N7 (Train)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/val/surface_hidden_l1_n7.png}
+        \caption{H1-N7 (Val)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/test/surface_hidden_l1_n7.png}
+        \caption{H1-N7 (Test)}
+    \end{subfigure}
+    \caption{Bivariate Regression 2HL $16\times8$: Node outputs (Part 2).}
+\label{fig:biv-nodes-2hl-2}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/train/surface_hidden_l1_n8.png}
+        \caption{H1-N8 (Train)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/val/surface_hidden_l1_n8.png}
+        \caption{H1-N8 (Val)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/test/surface_hidden_l1_n8.png}
+        \caption{H1-N8 (Test)}
+    \end{subfigure}
+    \vspace{0.3cm}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/train/surface_hidden_l1_n9.png}
+        \caption{H1-N9 (Train)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/val/surface_hidden_l1_n9.png}
+        \caption{H1-N9 (Val)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/test/surface_hidden_l1_n9.png}
+        \caption{H1-N9 (Test)}
+    \end{subfigure}
+    \vspace{0.3cm}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/train/surface_hidden_l1_n10.png}
+        \caption{H1-N10 (Train)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/val/surface_hidden_l1_n10.png}
+        \caption{H1-N10 (Val)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/test/surface_hidden_l1_n10.png}
+        \caption{H1-N10 (Test)}
+    \end{subfigure}
+    \vspace{0.3cm}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/train/surface_hidden_l1_n11.png}
+        \caption{H1-N11 (Train)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/val/surface_hidden_l1_n11.png}
+        \caption{H1-N11 (Val)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/test/surface_hidden_l1_n11.png}
+        \caption{H1-N11 (Test)}
+    \end{subfigure}
+    \caption{Bivariate Regression 2HL $16\times8$: Node outputs (Part 3).}
+\label{fig:biv-nodes-2hl-3}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/train/surface_hidden_l1_n12.png}
+        \caption{H1-N12 (Train)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/val/surface_hidden_l1_n12.png}
+        \caption{H1-N12 (Val)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/test/surface_hidden_l1_n12.png}
+        \caption{H1-N12 (Test)}
+    \end{subfigure}
+    \vspace{0.3cm}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/train/surface_hidden_l1_n13.png}
+        \caption{H1-N13 (Train)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/val/surface_hidden_l1_n13.png}
+        \caption{H1-N13 (Val)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/test/surface_hidden_l1_n13.png}
+        \caption{H1-N13 (Test)}
+    \end{subfigure}
+    \vspace{0.3cm}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/train/surface_hidden_l1_n14.png}
+        \caption{H1-N14 (Train)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/val/surface_hidden_l1_n14.png}
+        \caption{H1-N14 (Val)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/test/surface_hidden_l1_n14.png}
+        \caption{H1-N14 (Test)}
+    \end{subfigure}
+    \vspace{0.3cm}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/train/surface_hidden_l1_n15.png}
+        \caption{H1-N15 (Train)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/val/surface_hidden_l1_n15.png}
+        \caption{H1-N15 (Val)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/test/surface_hidden_l1_n15.png}
+        \caption{H1-N15 (Test)}
+    \end{subfigure}
+    \caption{Bivariate Regression 2HL $16\times8$: Node outputs (Part 4).}
+\label{fig:biv-nodes-2hl-4}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/train/surface_hidden_l2_n0.png}
+        \caption{H2-N0 (Train)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/val/surface_hidden_l2_n0.png}
+        \caption{H2-N0 (Val)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/test/surface_hidden_l2_n0.png}
+        \caption{H2-N0 (Test)}
+    \end{subfigure}
+    \vspace{0.3cm}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/train/surface_hidden_l2_n1.png}
+        \caption{H2-N1 (Train)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/val/surface_hidden_l2_n1.png}
+        \caption{H2-N1 (Val)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/test/surface_hidden_l2_n1.png}
+        \caption{H2-N1 (Test)}
+    \end{subfigure}
+    \vspace{0.3cm}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/train/surface_hidden_l2_n2.png}
+        \caption{H2-N2 (Train)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/val/surface_hidden_l2_n2.png}
+        \caption{H2-N2 (Val)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/test/surface_hidden_l2_n2.png}
+        \caption{H2-N2 (Test)}
+    \end{subfigure}
+    \vspace{0.3cm}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/train/surface_hidden_l2_n3.png}
+        \caption{H2-N3 (Train)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/val/surface_hidden_l2_n3.png}
+        \caption{H2-N3 (Val)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/test/surface_hidden_l2_n3.png}
+        \caption{H2-N3 (Test)}
+    \end{subfigure}
+    \caption{Bivariate Regression 2HL $16\times8$: Node outputs (Part 5).}
+\label{fig:biv-nodes-2hl-5}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/train/surface_hidden_l2_n4.png}
+        \caption{H2-N4 (Train)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/val/surface_hidden_l2_n4.png}
+        \caption{H2-N4 (Val)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/test/surface_hidden_l2_n4.png}
+        \caption{H2-N4 (Test)}
+    \end{subfigure}
+    \vspace{0.3cm}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/train/surface_hidden_l2_n5.png}
+        \caption{H2-N5 (Train)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/val/surface_hidden_l2_n5.png}
+        \caption{H2-N5 (Val)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/test/surface_hidden_l2_n5.png}
+        \caption{H2-N5 (Test)}
+    \end{subfigure}
+    \vspace{0.3cm}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/train/surface_hidden_l2_n6.png}
+        \caption{H2-N6 (Train)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/val/surface_hidden_l2_n6.png}
+        \caption{H2-N6 (Val)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/test/surface_hidden_l2_n6.png}
+        \caption{H2-N6 (Test)}
+    \end{subfigure}
+    \vspace{0.3cm}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/train/surface_hidden_l2_n7.png}
+        \caption{H2-N7 (Train)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/val/surface_hidden_l2_n7.png}
+        \caption{H2-N7 (Val)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/test/surface_hidden_l2_n7.png}
+        \caption{H2-N7 (Test)}
+    \end{subfigure}
+    \caption{Bivariate Regression 2HL $16\times8$: Node outputs (Part 6).}
+\label{fig:biv-nodes-2hl-6}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/train/surface_output_l3_n0.png}
+        \caption{Out-N0 (Train)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/val/surface_output_l3_n0.png}
+        \caption{Out-N0 (Val)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/2hl/best/test/surface_output_l3_n0.png}
+        \caption{Out-N0 (Test)}
+    \end{subfigure}
+    \caption{Bivariate Regression 2HL $16\times8$: Node outputs (Part 7).}
+\label{fig:biv-nodes-2hl-7}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/1hl/best/train/surface_hidden_l1_n0.png}
+        \caption{H1-N0 (Train)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/1hl/best/val/surface_hidden_l1_n0.png}
+        \caption{H1-N0 (Val)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/1hl/best/test/surface_hidden_l1_n0.png}
+        \caption{H1-N0 (Test)}
+    \end{subfigure}
+    \vspace{0.3cm}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/1hl/best/train/surface_hidden_l1_n1.png}
+        \caption{H1-N1 (Train)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/1hl/best/val/surface_hidden_l1_n1.png}
+        \caption{H1-N1 (Val)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/1hl/best/test/surface_hidden_l1_n1.png}
+        \caption{H1-N1 (Test)}
+    \end{subfigure}
+    \vspace{0.3cm}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/1hl/best/train/surface_hidden_l1_n2.png}
+        \caption{H1-N2 (Train)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/1hl/best/val/surface_hidden_l1_n2.png}
+        \caption{H1-N2 (Val)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/1hl/best/test/surface_hidden_l1_n2.png}
+        \caption{H1-N2 (Test)}
+    \end{subfigure}
+    \vspace{0.3cm}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/1hl/best/train/surface_hidden_l1_n3.png}
+        \caption{H1-N3 (Train)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/1hl/best/val/surface_hidden_l1_n3.png}
+        \caption{H1-N3 (Val)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/1hl/best/test/surface_hidden_l1_n3.png}
+        \caption{H1-N3 (Test)}
+    \end{subfigure}
+    \caption{Bivariate Regression 1HL$\times$16: Node outputs (Part 1).}
+\label{fig:biv-nodes-1hl-1}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/1hl/best/train/surface_hidden_l1_n4.png}
+        \caption{H1-N4 (Train)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/1hl/best/val/surface_hidden_l1_n4.png}
+        \caption{H1-N4 (Val)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/1hl/best/test/surface_hidden_l1_n4.png}
+        \caption{H1-N4 (Test)}
+    \end{subfigure}
+    \vspace{0.3cm}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/1hl/best/train/surface_hidden_l1_n5.png}
+        \caption{H1-N5 (Train)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/1hl/best/val/surface_hidden_l1_n5.png}
+        \caption{H1-N5 (Val)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/1hl/best/test/surface_hidden_l1_n5.png}
+        \caption{H1-N5 (Test)}
+    \end{subfigure}
+    \vspace{0.3cm}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/1hl/best/train/surface_hidden_l1_n6.png}
+        \caption{H1-N6 (Train)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/1hl/best/val/surface_hidden_l1_n6.png}
+        \caption{H1-N6 (Val)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/1hl/best/test/surface_hidden_l1_n6.png}
+        \caption{H1-N6 (Test)}
+    \end{subfigure}
+    \vspace{0.3cm}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/1hl/best/train/surface_hidden_l1_n7.png}
+        \caption{H1-N7 (Train)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/1hl/best/val/surface_hidden_l1_n7.png}
+        \caption{H1-N7 (Val)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/1hl/best/test/surface_hidden_l1_n7.png}
+        \caption{H1-N7 (Test)}
+    \end{subfigure}
+    \caption{Bivariate Regression 1HL$\times$16: Node outputs (Part 2).}
+\label{fig:biv-nodes-1hl-2}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/1hl/best/train/surface_hidden_l1_n8.png}
+        \caption{H1-N8 (Train)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/1hl/best/val/surface_hidden_l1_n8.png}
+        \caption{H1-N8 (Val)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/1hl/best/test/surface_hidden_l1_n8.png}
+        \caption{H1-N8 (Test)}
+    \end{subfigure}
+    \vspace{0.3cm}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/1hl/best/train/surface_hidden_l1_n9.png}
+        \caption{H1-N9 (Train)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/1hl/best/val/surface_hidden_l1_n9.png}
+        \caption{H1-N9 (Val)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/1hl/best/test/surface_hidden_l1_n9.png}
+        \caption{H1-N9 (Test)}
+    \end{subfigure}
+    \vspace{0.3cm}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/1hl/best/train/surface_hidden_l1_n10.png}
+        \caption{H1-N10 (Train)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/1hl/best/val/surface_hidden_l1_n10.png}
+        \caption{H1-N10 (Val)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/1hl/best/test/surface_hidden_l1_n10.png}
+        \caption{H1-N10 (Test)}
+    \end{subfigure}
+    \vspace{0.3cm}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/1hl/best/train/surface_hidden_l1_n11.png}
+        \caption{H1-N11 (Train)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/1hl/best/val/surface_hidden_l1_n11.png}
+        \caption{H1-N11 (Val)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/1hl/best/test/surface_hidden_l1_n11.png}
+        \caption{H1-N11 (Test)}
+    \end{subfigure}
+    \caption{Bivariate Regression 1HL$\times$16: Node outputs (Part 3).}
+\label{fig:biv-nodes-1hl-3}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/1hl/best/train/surface_hidden_l1_n12.png}
+        \caption{H1-N12 (Train)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/1hl/best/val/surface_hidden_l1_n12.png}
+        \caption{H1-N12 (Val)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/1hl/best/test/surface_hidden_l1_n12.png}
+        \caption{H1-N12 (Test)}
+    \end{subfigure}
+    \vspace{0.3cm}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/1hl/best/train/surface_hidden_l1_n13.png}
+        \caption{H1-N13 (Train)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/1hl/best/val/surface_hidden_l1_n13.png}
+        \caption{H1-N13 (Val)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/1hl/best/test/surface_hidden_l1_n13.png}
+        \caption{H1-N13 (Test)}
+    \end{subfigure}
+    \vspace{0.3cm}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/1hl/best/train/surface_hidden_l1_n14.png}
+        \caption{H1-N14 (Train)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/1hl/best/val/surface_hidden_l1_n14.png}
+        \caption{H1-N14 (Val)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/1hl/best/test/surface_hidden_l1_n14.png}
+        \caption{H1-N14 (Test)}
+    \end{subfigure}
+    \vspace{0.3cm}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/1hl/best/train/surface_hidden_l1_n15.png}
+        \caption{H1-N15 (Train)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/1hl/best/val/surface_hidden_l1_n15.png}
+        \caption{H1-N15 (Val)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/1hl/best/test/surface_hidden_l1_n15.png}
+        \caption{H1-N15 (Test)}
+    \end{subfigure}
+    \caption{Bivariate Regression 1HL$\times$16: Node outputs (Part 4).}
+\label{fig:biv-nodes-1hl-4}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/1hl/best/train/surface_output_l2_n0.png}
+        \caption{Out-N0 (Train)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/1hl/best/val/surface_output_l2_n0.png}
+        \caption{Out-N0 (Val)}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{outputs/regression/bivariate/1hl/best/test/surface_output_l2_n0.png}
+        \caption{Out-N0 (Test)}
+    \end{subfigure}
+    \caption{Bivariate Regression 1HL$\times$16: Node outputs (Part 5).}
+\label{fig:biv-nodes-1hl-5}
+\end{figure}
+
+\subsection{Comparison with Assignment 1: Regression}
+
+\begin{table}[H]
+\centering
+\caption{Regression: Assignment~1 (linear perceptron) vs.\ Assignment~2 (FCNN).}
+\label{tab:reg-a1-a2}
+\begin{tabular}{lllrr}
+\toprule
+Dataset & Model & Architecture & Test RMSE & Test \%RMSE \\
+\midrule
+Dataset 1 (Univariate) & Single Neuron (A1) & Linear perceptron & 1.2662 & 53.52\% \\
+                        & FCNN (A2) & 1HL$\times$2 & 0.0738 & 3.198\% \\
+\midrule
+Dataset 2 (Bivariate)  & Single Neuron (A1) & Linear perceptron (2D) & 3.3342 & 83.64\% \\
+                        & FCNN (A2, 1HL) & 1HL$\times$16 & 0.0569 & 1.417\% \\
+                        & FCNN (A2, 2HL) & 2HL $16\times8$ & 0.0585 & 1.457\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+As summarised in Table~\ref{tab:reg-a1-a2}, the linear perceptron from A1 incurs 53.52\% and 83.64\% test \%RMSE on non-linear targets. The FCNN reduces test \%RMSE by over $16\times$ (univariate) and $57\times$ (bivariate) by composing sigmoid hidden activations.
+
+\subsection{Inferences on Regression Results}
+\begin{itemize}
+    \item Both error curves (Fig.~\ref{fig:uni-error} and Fig.~\ref{fig:biv-error}) show a steep initial decrease followed by a stable plateau, indicating rapid convergence.
+    \item The model-output overlay plots (Fig.~\ref{fig:uni-superimposed}, Fig.~\ref{fig:biv-superimposed-2hl}, and Fig.~\ref{fig:biv-superimposed-1hl}) confirm that the FCNNs accurately reproduce the underlying non-linear target functions.
+    \item Scatter plots (Fig.~\ref{fig:uni-scatter}, Fig.~\ref{fig:biv-scatter-2hl}, and Fig.~\ref{fig:biv-scatter-1hl}) show predictions closely clustered along the perfect-fit diagonal across all splits.
+    \item As seen in Table~\ref{tab:biv-test}, 1HL and 2HL achieve nearly identical test \%RMSE for the bivariate task ($\approx 1.4\%$), showing one well-sized hidden layer already captures the dominant non-linearity.
+    \item Larger architectures do not consistently outperform smaller ones under online SGD with fixed epochs, as evident from Table~\ref{tab:uni-trainval} and Table~\ref{tab:biv-trainval}.
+\end{itemize}
+
+%===========================================================================
+\section{Comparison and Inferences: Assignment 1 vs.\ Assignment 2}
+
+\begin{enumerate}
+    \item \textbf{Representational Failure Solved:} Single-layer perceptrons achieved 26.6\% on NLS (below chance, Table~\ref{tab:class-a1-a2}) and RMSE reduced by $57\times$ on bivariate regression (Table~\ref{tab:reg-a1-a2}). FCNN hidden units construct localised non-linear basis functions that compose to form arbitrarily complex boundaries.
+    \item \textbf{Bottleneck Configurations:} 2HL architectures with $h_1>h_2$ compress internal representations, achieving equivalent or better generalisation with fewer parameters in the second layer.
+    \item \textbf{Softmax Output:} Produces a normalised probability distribution over classes, ensuring probabilities sum to 1 and providing well-calibrated class-specific confidence scores.
+    \item \textbf{SGD vs.\ Batch GD:} Online SGD ($\eta=0.5$) introduces stochasticity that can escape shallow local minima, critical for the NLS non-linear landscape. Batch GD (A1, $\eta=0.01$) produced smooth curves but failed on NLS.
+\end{enumerate}
+
+%===========================================================================
+\end{document}

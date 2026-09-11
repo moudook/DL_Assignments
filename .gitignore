@@ -1,4 +1,4 @@
-﻿# ── Datasets (large files, not tracked) ──────────────────────────
+# ── Datasets (large files, not tracked) ──────────────────────────
 !**/data/README.md
 data/
 
@@ -12,13 +12,16 @@ __pycache__/
 .venv/
 venv/
 
-# ── Generated outputs (ignore scratch, commit final plots manually)
-Assignment*/outputs/
-
 # ── OS junk ───────────────────────────────────────────────────────
 .DS_Store
+Thumbs.db
 
-# ── Images ──────────────────────────────────────────────────────
+# ── Output / results folders ──────────────────────────────────────
+results/
+outputs/
+Assignment*/outputs/
+
+# ── Images & plots (output artifacts) ────────────────────────────
 *.png
 *.jpg
 *.jpeg
@@ -28,3 +31,30 @@ Assignment*/outputs/
 *.tif
 *.svg
 *.webp
+
+# ── Data files (output artifacts) ────────────────────────────────
+*.csv
+*.json
+*.txt
+*.npy
+*.npz
+*.pkl
+*.pickle
+*.h5
+*.hdf5
+*.pt
+*.pth
+
+# ── LaTeX build artifacts ─────────────────────────────────────────
+*.aux
+*.log
+*.out
+*.toc
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+*.bbl
+*.blg
+
+# ── Assignment 2 — all report files (PDFs, tex, build artifacts) ──
+Group11_Assignment2_code/Group11_Assignment2_report*
