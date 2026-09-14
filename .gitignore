@@ -44,7 +44,7 @@ Assignment*/outputs/
 *.hdf5
 *.pt
 *.pth
-
+*.pdf
 # ── LaTeX build artifacts ─────────────────────────────────────────
 *.aux
 *.log
