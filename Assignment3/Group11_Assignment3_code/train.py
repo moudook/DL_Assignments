@@ -21,6 +21,12 @@ def train_model(model, optimizer, train_loader, val_loader, device, max_epochs=1
     criterion = nn.CrossEntropyLoss()
     model.to(device)
     
+    use_amp = device.type == 'cuda'
+    scaler = torch.amp.GradScaler(device.type, enabled=use_amp)
+    
+    if device.type == 'cuda':
+        torch.backends.cudnn.benchmark = True
+    
     history = {
         'train_loss': [],
         'train_acc': [],
@@ -36,29 +42,44 @@ def train_model(model, optimizer, train_loader, val_loader, device, max_epochs=1
         all_train_targets = []
         
         for batch_X, batch_y in train_loader:
-            batch_X, batch_y = batch_X.to(device), batch_y.to(device)
+            batch_X, batch_y = batch_X.to(device, non_blocking=True), batch_y.to(device, non_blocking=True)
             
-            # Forward pass
-            outputs = model(batch_X)
-            loss = criterion(outputs, batch_y)
-
+            optimizer.zero_grad(set_to_none=True)
+            
+            if use_amp:
+                with torch.amp.autocast(device.type, dtype=torch.float16):
+                    outputs = model(batch_X)
+                    loss = criterion(outputs, batch_y)
+            else:
+                outputs = model(batch_X)
+                loss = criterion(outputs, batch_y)
+            
             if not torch.isfinite(loss):
                 raise RuntimeError(
                     f"Non-finite loss {loss.item()} before backward/update"
                 )
-
-            # Backward
-            optimizer.zero_grad()
-            loss.backward()
-
-            # Numerical guard: reject NaN/Inf gradients before weights are corrupted
-            for p in model.parameters():
-                if p.grad is not None and not torch.isfinite(p.grad).all():
-                    raise RuntimeError(
-                        f"Non-finite gradient detected before optimizer.step()"
-                    )
-
-            optimizer.step()
+            
+            if use_amp:
+                scaler.scale(loss).backward()
+                
+                for p in model.parameters():
+                    if p.grad is not None and not torch.isfinite(p.grad).all():
+                        raise RuntimeError(
+                            f"Non-finite gradient detected before optimizer.step()"
+                        )
+                
+                scaler.step(optimizer)
+                scaler.update()
+            else:
+                loss.backward()
+                
+                for p in model.parameters():
+                    if p.grad is not None and not torch.isfinite(p.grad).all():
+                        raise RuntimeError(
+                            f"Non-finite gradient detected before optimizer.step()"
+                        )
+                
+                optimizer.step()
             
             running_loss += loss.item() * batch_X.size(0)
             
@@ -75,7 +96,7 @@ def train_model(model, optimizer, train_loader, val_loader, device, max_epochs=1
         all_val_targets = []
         with torch.no_grad():
             for batch_X, batch_y in val_loader:
-                batch_X, batch_y = batch_X.to(device), batch_y.to(device)
+                batch_X, batch_y = batch_X.to(device, non_blocking=True), batch_y.to(device, non_blocking=True)
                 outputs = model(batch_X)
                 _, preds = torch.max(outputs, 1)
                 all_val_preds.extend(preds.cpu().numpy())

@@ -45,9 +45,28 @@ def get_dataloaders(data_dir, batch_size=None, is_full_batch=False, seed=42, dev
 
     use_pin_memory = (device is not None and device.type == 'cuda')
     train_generator = torch.Generator().manual_seed(seed)
-    train_loader = DataLoader(train_dataset, batch_size=train_bs, shuffle=True, generator=train_generator, pin_memory=use_pin_memory, num_workers=4, persistent_workers=True, prefetch_factor=2)
-    val_loader = DataLoader(val_dataset, batch_size=val_bs, shuffle=False, pin_memory=use_pin_memory)
-    test_loader = DataLoader(test_dataset, batch_size=test_bs, shuffle=False, pin_memory=use_pin_memory)
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=train_bs,
+        shuffle=True,
+        generator=train_generator,
+        pin_memory=use_pin_memory,
+        num_workers=2,
+        prefetch_factor=2,
+        persistent_workers=True,
+    )
+    val_loader = DataLoader(
+        val_dataset,
+        batch_size=val_bs,
+        shuffle=False,
+        pin_memory=use_pin_memory,
+    )
+    test_loader = DataLoader(
+        test_dataset,
+        batch_size=test_bs,
+        shuffle=False,
+        pin_memory=use_pin_memory,
+    )
 
     return train_loader, val_loader, test_loader
 

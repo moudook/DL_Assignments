@@ -27,6 +27,16 @@ MAX_EPOCHS = 10000
 def run_experiments(data_dir, save_dir, max_epochs=MAX_EPOCHS, arch_names=None):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Using device: {device}")
+    
+    if device.type == 'cuda':
+        print(f"GPU: {torch.cuda.get_device_name(0)}")
+        print(f"CUDA version: {torch.version.cuda}")
+        print(f"PyTorch version: {torch.__version__}")
+        torch.backends.cudnn.benchmark = True
+        print("cuDNN benchmark enabled for fixed input sizes.")
+    else:
+        print("WARNING: CUDA not available. Training will run on CPU and be much slower.")
+        print("Check: Runtime > Change runtime type > Hardware accelerator > GPU")
 
     os.makedirs(save_dir, exist_ok=True)
     os.makedirs(os.path.join(save_dir, 'plots', 'epoch_loss'), exist_ok=True)
