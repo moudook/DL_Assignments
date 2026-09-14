@@ -24,7 +24,7 @@ DATA_SEED = 42
 MAX_EPOCHS = 10000
 
 
-def run_experiments(data_dir, save_dir, max_epochs=MAX_EPOCHS):
+def run_experiments(data_dir, save_dir, max_epochs=MAX_EPOCHS, arch_names=None):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Using device: {device}")
 
@@ -35,6 +35,9 @@ def run_experiments(data_dir, save_dir, max_epochs=MAX_EPOCHS):
     os.makedirs(os.path.join(save_dir, 'plots', 'scatter_3d'), exist_ok=True)
 
     models_dict = get_models()
+
+    if arch_names is not None:
+        models_dict = {k: v for k, v in models_dict.items() if k in arch_names}
 
     opt_configs = {
         'SGD': (optim.SGD, {'lr': LR}, False),
