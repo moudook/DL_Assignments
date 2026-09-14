@@ -9,7 +9,7 @@ class FlattenTransform:
         # x is of shape (C, H, W)
         return x.view(-1)
 
-def get_dataloaders(data_dir, batch_size=None, is_full_batch=False):
+def get_dataloaders(data_dir, batch_size=None, is_full_batch=False, seed=42, device=None):
     """
     Returns train, val, and test dataloaders.
     
@@ -17,6 +17,8 @@ def get_dataloaders(data_dir, batch_size=None, is_full_batch=False):
         data_dir (str): Path to the Group_11 dataset folder containing 'train', 'val', 'test'
         batch_size (int): Batch size to use (ignored if is_full_batch=True)
         is_full_batch (bool): If True, returns the entire dataset in a single batch
+        seed (int): Seed for deterministic shuffling of the training DataLoader
+        device (torch.device or None): Target device; when CUDA, enables pin_memory
     """
     transform = transforms.Compose([
         transforms.Grayscale(), # ensure it's 1 channel
@@ -41,9 +43,11 @@ def get_dataloaders(data_dir, batch_size=None, is_full_batch=False):
     # For optimizers like Adam or SGD, batch_size=1 is required by assignment.
     # We will pass batch_size=1 for them, and is_full_batch=True for BGD, AdaGrad, RMSProp.
 
-    train_loader = DataLoader(train_dataset, batch_size=train_bs, shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=val_bs, shuffle=False)
-    test_loader = DataLoader(test_dataset, batch_size=test_bs, shuffle=False)
+    use_pin_memory = (device is not None and device.type == 'cuda')
+    train_generator = torch.Generator().manual_seed(seed)
+    train_loader = DataLoader(train_dataset, batch_size=train_bs, shuffle=True, generator=train_generator, pin_memory=use_pin_memory, num_workers=4, persistent_workers=True, prefetch_factor=2)
+    val_loader = DataLoader(val_dataset, batch_size=val_bs, shuffle=False, pin_memory=use_pin_memory)
+    test_loader = DataLoader(test_dataset, batch_size=test_bs, shuffle=False, pin_memory=use_pin_memory)
 
     return train_loader, val_loader, test_loader
 

@@ -41,10 +41,23 @@ def train_model(model, optimizer, train_loader, val_loader, device, max_epochs=1
             # Forward pass
             outputs = model(batch_X)
             loss = criterion(outputs, batch_y)
-            
-            # Backward and optimize
+
+            if not torch.isfinite(loss):
+                raise RuntimeError(
+                    f"Non-finite loss {loss.item()} before backward/update"
+                )
+
+            # Backward
             optimizer.zero_grad()
             loss.backward()
+
+            # Numerical guard: reject NaN/Inf gradients before weights are corrupted
+            for p in model.parameters():
+                if p.grad is not None and not torch.isfinite(p.grad).all():
+                    raise RuntimeError(
+                        f"Non-finite gradient detected before optimizer.step()"
+                    )
+
             optimizer.step()
             
             running_loss += loss.item() * batch_X.size(0)

@@ -1,11 +1,26 @@
 import torch
 import torch.nn as nn
 
-# Fixed seed used to initialize ALL models reproducibly.
-# Every architecture is created after resetting to this same seed,
-# satisfying the assignment requirement: "Use the same initial random
-# values of weights for each architecture using each of the optimizers."
+# ---------------------------------------------------------------------------
+# Explicit weight initialisation
+# ---------------------------------------------------------------------------
+# Xavier Glorot Uniform: limit = sqrt(6 / (fan_in + fan_out)).
+# Textbook choice for tanh, matches TF/Keras default, and is applied
+# explicitly so we own the formula and range.
+#
+# Seed policy: torch.manual_seed(INIT_SEED) is called ONCE in get_models()
+# so every architecture draws from one reproducible global stream.  The
+# state_dict save/load in experiment.py guarantees that every optimizer
+# sees the exact same starting weights for a given architecture.
+# ---------------------------------------------------------------------------
+
 INIT_SEED = 42
+
+
+def _init_weights(m: nn.Module) -> None:
+    if isinstance(m, nn.Linear):
+        nn.init.xavier_uniform_(m.weight)
+        nn.init.zeros_(m.bias)
 
 
 class FCNN(nn.Module):
@@ -33,6 +48,7 @@ class FCNN(nn.Module):
         layers.append(nn.Linear(current_in, num_classes))
 
         self.net = nn.Sequential(*layers)
+        self.apply(_init_weights)
 
     def forward(self, x):
         return self.net(x)
@@ -40,10 +56,10 @@ class FCNN(nn.Module):
 
 def _make_model(hidden_sizes, input_dim=784, num_classes=5):
     """
-    Create an FCNN after resetting the RNG to INIT_SEED so that every
-    architecture starts from the same reproducible random state.
+    Create an FCNN.  The RNG is NOT reset here; get_models() sets the seed
+    once before building all architectures so each model consumes a unique
+    deterministic slice of the global random stream.
     """
-    torch.manual_seed(INIT_SEED)
     return FCNN(input_dim=input_dim, hidden_sizes=hidden_sizes, num_classes=num_classes)
 
 
@@ -63,9 +79,11 @@ def get_models():
       Medium — first hidden layer ~256 nodes
       Small  — first hidden layer ~128 nodes
 
-    All models are created with the same random seed (INIT_SEED) so that
-    weight initialisation is reproducible (assignment point d).
+    All models are created from a single global random stream seeded once
+    with INIT_SEED, so weight initialisation is reproducible and explicit.
     """
+    torch.manual_seed(INIT_SEED)
+    print(f"[models] Initializing 27 architectures with Xavier Glorot Uniform (seed={INIT_SEED})")
     return {
         # ════════════════════════════════════════════════════════════════════
         # 3 Hidden Layers
