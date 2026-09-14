@@ -75,7 +75,13 @@ def train_model(model, optimizer,
     model.to(device)
 
     use_amp = device.type == 'cuda'
-    scaler = torch.amp.GradScaler(device.type, enabled=use_amp)
+    # torch.amp.GradScaler(device_type, ...) requires PyTorch >= 2.3.
+    # Fall back to the legacy torch.cuda.amp.GradScaler for older installs
+    # so the code runs on a friend's laptop without a PyTorch upgrade.
+    try:
+        scaler = torch.amp.GradScaler(device.type, enabled=use_amp)
+    except TypeError:
+        scaler = torch.cuda.amp.GradScaler(enabled=use_amp)
 
     if device.type == 'cuda':
         torch.backends.cudnn.benchmark = True
@@ -148,42 +154,34 @@ def train_model(model, optimizer,
                         optimizer.zero_grad(set_to_none=True)
 
                         if use_amp:
+                            # ── GPU / AMP path ─────────────────────────────
+                            # Forward under fp16 autocast.
                             with torch.amp.autocast(device.type, dtype=torch.float16):
                                 outputs = model(batch_X)
                                 loss    = criterion(outputs, batch_y)
-                        else:
-                            outputs = model(batch_X)
-                            loss    = criterion(outputs, batch_y)
-
-                        if not torch.isfinite(loss):
-                            raise RuntimeError(
-                                f"Non-finite loss {loss.item()} before backward/update"
-                            )
-
-                        if use_amp:
-                            # NOTE: gradients here are still SCALED by scaler.get_scale()
-                            # (a large factor, e.g. 65536x) to prevent fp16 underflow
-                            # during backward. Seeing inf/nan at this exact point is a
-                            # NORMAL, expected part of AMP — not a sign of diverged
-                            # training — and is especially common early on with
-                            # batch_size=1, where per-sample gradient variance is high.
-                            # scaler.step() unscales the gradients itself, detects any
-                            # non-finite values, and SKIPS the optimizer step for just
-                            # this batch; scaler.update() then shrinks the scale factor
-                            # so subsequent batches are less likely to overflow. This
-                            # self-corrects automatically, so we must not hard-fail on
-                            # it here (doing so used to kill the run on the first
-                            # unlucky batch).
+                            # DO NOT call torch.isfinite(loss) here.
+                            # On GPU each isfinite() call forces a CPU↔GPU sync.
+                            # At 11,385 syncs/epoch this kills GPU throughput.
+                            # The GradScaler already handles NaN/inf:
+                            # scaler.step() detects infinite unscaled gradients
+                            # and skips the optimizer update for that sample;
+                            # scaler.update() then reduces the loss scale.
                             scaler.scale(loss).backward()
                             scaler.step(optimizer)
                             scaler.update()
                         else:
+                            # ── CPU path ───────────────────────────────────
+                            # isfinite() on a CPU tensor is a local Python op
+                            # with no sync overhead — safe to call per sample.
+                            outputs = model(batch_X)
+                            loss    = criterion(outputs, batch_y)
+                            if not torch.isfinite(loss):
+                                raise RuntimeError(
+                                    f"Non-finite loss {loss.item()} before backward/update"
+                                )
                             loss.backward()
-
-                            # Fused gradient-norm check: single kernel over all params
-                            # instead of a Python loop calling .all() per tensor.
-                            # clip_grad_norm_(inf) returns the global L2 norm without
-                            # clipping anything.
+                            # Fused gradient norm check — one kernel, not a
+                            # Python loop over individual parameter tensors.
                             total_norm = torch.nn.utils.clip_grad_norm_(
                                 model.parameters(), max_norm=float('inf')
                             )
@@ -193,6 +191,7 @@ def train_model(model, optimizer,
                                 )
 
                             optimizer.step()
+
 
                         # Accumulate WITHOUT .item() — zero Python/device sync.
                         # batch_size=1: loss IS the per-sample loss directly.
@@ -221,11 +220,10 @@ def train_model(model, optimizer,
                     else:
                         outputs = model(X_train)
                         loss    = criterion(outputs, y_train)
-
-                    if not torch.isfinite(loss):
-                        raise RuntimeError(
-                            f"Non-finite loss {loss.item()} before backward/update"
-                        )
+                        if not torch.isfinite(loss):
+                            raise RuntimeError(
+                                f"Non-finite loss {loss.item()} before backward/update"
+                            )
 
                     if use_amp:
                         scaler.scale(loss).backward()
