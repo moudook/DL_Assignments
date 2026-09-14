@@ -60,14 +60,20 @@ def train_model(model, optimizer, train_loader, val_loader, device, max_epochs=1
                 )
             
             if use_amp:
+                # NOTE: gradients here are still SCALED by scaler.get_scale()
+                # (a large factor, e.g. 65536x) to prevent fp16 underflow
+                # during backward. Seeing inf/nan at this exact point is a
+                # NORMAL, expected part of AMP — not a sign of diverged
+                # training — and is especially common early on with
+                # batch_size=1, where per-sample gradient variance is high.
+                # scaler.step() unscales the gradients itself, detects any
+                # non-finite values, and SKIPS the optimizer step for just
+                # this batch; scaler.update() then shrinks the scale factor
+                # so subsequent batches are less likely to overflow. This
+                # self-corrects automatically, so we must not hard-fail on
+                # it here (doing so used to kill the run on the first
+                # unlucky batch).
                 scaler.scale(loss).backward()
-                
-                for p in model.parameters():
-                    if p.grad is not None and not torch.isfinite(p.grad).all():
-                        raise RuntimeError(
-                            f"Non-finite gradient detected before optimizer.step()"
-                        )
-                
                 scaler.step(optimizer)
                 scaler.update()
             else:
@@ -116,7 +122,6 @@ def train_model(model, optimizer, train_loader, val_loader, device, max_epochs=1
             
         prev_loss = epoch_train_loss
         
-        if (epoch + 1) % 100 == 0 or epoch == 0:
-            print(f"Epoch [{epoch+1}/{max_epochs}], Loss: {epoch_train_loss:.4f}, Train Acc: {epoch_train_acc:.4f}, Val Acc: {epoch_val_acc:.4f}")
+        print(f"Epoch [{epoch+1}/{max_epochs}], Loss: {epoch_train_loss:.4f}, Train Acc: {epoch_train_acc:.4f}, Val Acc: {epoch_val_acc:.4f}")
             
     return history

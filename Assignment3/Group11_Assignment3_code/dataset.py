@@ -45,15 +45,29 @@ def get_dataloaders(data_dir, batch_size=None, is_full_batch=False, seed=42, dev
 
     use_pin_memory = (device is not None and device.type == 'cuda')
     train_generator = torch.Generator().manual_seed(seed)
+
+    # num_workers=0 is intentional. Each sample here is a 784-d flattened
+    # vector (~3KB) and the whole train split is ~11k samples, so decoding
+    # is essentially free — worker processes add pure overhead and no
+    # speedup. On Windows, num_workers>0 routes every batch through a
+    # named shared-memory file mapping; for the full-batch optimizers
+    # (BGD/AdaGrad/RMSProp) that means pushing the ENTIRE dataset through
+    # one shared-memory segment in a single collate call, which is what
+    # produced the "Couldn't open shared file mapping ... error code 1455"
+    # crash (Windows hit its page-file/commit limit). get_dataloaders() is
+    # also called fresh for every (architecture, optimizer) pair — 35
+    # times total — and with persistent_workers=True each call spawned new
+    # worker processes without the previous ones necessarily being torn
+    # down right away, so handle/shared-memory pressure built up across
+    # runs. That's what produced the later "MemoryError" while spawning a
+    # worker for SGD_Momentum. Single-process loading avoids both.
     train_loader = DataLoader(
         train_dataset,
         batch_size=train_bs,
         shuffle=True,
         generator=train_generator,
         pin_memory=use_pin_memory,
-        num_workers=2,
-        prefetch_factor=2,
-        persistent_workers=True,
+        num_workers=0,
     )
     val_loader = DataLoader(
         val_dataset,

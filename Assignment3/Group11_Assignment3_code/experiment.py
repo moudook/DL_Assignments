@@ -219,6 +219,6 @@ def run_experiments(data_dir, save_dir, max_epochs=MAX_EPOCHS, arch_names=None):
 
 
 if __name__ == '__main__':
-    data_directory = r'd:\DeepLearning\DL_Assignments\Assignment3\Group_11\Group_11'
-    save_directory = r'd:\DeepLearning\DL_Assignments\Assignment3\Group11_Assignment3_code\results'
+    data_directory = r'.\Data\Group_11'
+    save_directory = r'.\Data\results'
     run_experiments(data_directory, save_directory, max_epochs=10000)
