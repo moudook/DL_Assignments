@@ -228,9 +228,7 @@ def _run_arch_experiment(arch_name, initial_weights_cpu,
                 max_epochs   = max_epochs,
                 tol          = TOL,
                 shuffle_seed = DATA_SEED,
-                val_interval = 10,
                 log_interval = 100,
-                ema_beta     = 0.99,
             )
         except RuntimeError as e:
             print(f"[ERROR] {arch_name}/{opt_name}: {e}")

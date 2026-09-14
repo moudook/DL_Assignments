@@ -12,9 +12,7 @@ def train_model(model, optimizer,
                 max_epochs=10000,
                 tol=1e-4,
                 shuffle_seed=42,
-                val_interval=10,
-                log_interval=100,
-                ema_beta=0.99):
+                log_interval=100):
     """
     Trains a model using a specified optimizer.
 
@@ -43,16 +41,8 @@ def train_model(model, optimizer,
     • Tier 2d – Fused gradient-norm check via clip_grad_norm_(inf) — one kernel
                 instead of a Python loop over parameter tensors.
     • Tier 2e – torch.inference_mode() for validation (faster than no_grad).
-    • Tier 3a – EMA-smoothed convergence detection: the raw epoch-loss difference
-                is noisy for batch_size=1; an EMA of the loss detects plateau
-                reliably, cutting thousands of wasted epochs for stochastic opts.
-                Both the raw criterion AND the EMA criterion are checked; whichever
-                fires first wins, so we never stop later than the original would.
-    • Tier 3b – Throttled validation: validate every val_interval epochs (default
-                10) instead of every epoch.  Val pass is inference-only, never
-                affects gradients.  Last known val_acc fills history for skipped
-                epochs.
-    • Tier 3c – Throttled logging: print every log_interval epochs (default 100).
+    • Tier 3  – Throttled logging: print every log_interval epochs (default 100).
+                History and model weights are unaffected — this is cosmetic only.
     • Tier 5f – Python GC disabled during the epoch loop to eliminate GC pauses.
                 Manual gc.collect() every 50 epochs; re-enabled in finally block.
 
@@ -69,14 +59,13 @@ def train_model(model, optimizer,
                            False → full-batch in one forward/backward call.
         device           : torch.device ('cpu' or 'cuda').
         max_epochs (int) : Hard cap on training epochs.
-        tol (float)      : Convergence tolerance (applied to both raw and EMA diff).
+        tol (float)      : Early-stopping tolerance on consecutive epoch loss.
+                           Training stops when abs(epoch_loss - prev_loss) < tol.
+                           This is the original criterion, unchanged.
         shuffle_seed(int): Seed for torch.Generator — must match DATA_SEED used
                            during preload_tensors() to guarantee reproducibility.
-        val_interval(int): Validate every N epochs. Default 10.
-        log_interval(int): Print every N epochs. Default 100.
-        ema_beta  (float): EMA smoothing factor for convergence detection (0–1).
-                           Higher → slower to react, more noise-resistant.
-                           Default 0.99 (≈100-epoch memory).
+        log_interval(int): Print every N epochs (cosmetic only — does not affect
+                           history or model weights). Default 100.
 
     Returns:
         history (dict): {'train_loss': [...], 'train_acc': [...], 'val_acc': [...]}
@@ -98,9 +87,9 @@ def train_model(model, optimizer,
     }
 
     # ── Convergence tracking ────────────────────────────────────────────────
-    prev_loss    = float('inf')   # for raw criterion
-    ema_loss     = None           # initialised on first epoch
-    prev_ema     = float('inf')   # EMA value from previous epoch
+    # Original criterion: abs(epoch_loss - prev_loss) < tol.
+    # This is unchanged from the assignment specification.
+    prev_loss = float('inf')
 
     # ── Pre-compute tensor-mode constants ───────────────────────────────────
     use_tensor_mode = (X_train is not None) and (X_val is not None)
@@ -126,8 +115,6 @@ def train_model(model, optimizer,
             # Pre-allocated prediction buffer — N entries, filled in-place.
             # Declared ONCE here; avoids re-allocation every epoch.
             preds_buf = torch.empty(N, dtype=torch.long, device=device)
-
-    last_val_acc = 0.0   # last computed val accuracy (for throttled val)
 
     # ── Disable Python GC for the hot loop ──────────────────────────────────
     # The epoch loop is Python-intensive (especially for batch_size=1).
@@ -315,58 +302,37 @@ def train_model(model, optimizer,
                 epoch_train_loss = running_loss_dl.item() / n_dl
                 epoch_train_acc  = (all_preds_t == all_targets_t).float().mean().item()
 
-            # ── Throttled validation ─────────────────────────────────────────
-            # Val is inference-only; it never affects gradients or weights.
-            # Running it every val_interval epochs saves ~90% of val compute.
-            # Skipped epochs carry the last known val_acc in history.
-            if epoch % val_interval == 0:
-                model.eval()
-                # torch.inference_mode is faster than no_grad: it additionally
-                # skips version-counter increments and view-tracking bookkeeping.
-                with torch.inference_mode():
-                    if use_tensor_mode:
-                        val_out      = model(X_val)
-                        last_val_acc = (val_out.argmax(1) == y_val).float().mean().item()
-                    else:
-                        vp, vt = [], []
-                        for bX, bY in val_loader:
-                            bX = bX.to(device, non_blocking=True)
-                            bY = bY.to(device, non_blocking=True)
-                            vp.append(model(bX).argmax(1))
-                            vt.append(bY)
-                        last_val_acc = (torch.cat(vp) == torch.cat(vt)).float().mean().item()
-                model.train()
-
-            epoch_val_acc = last_val_acc
+            # ── Validation (every epoch — required for correct history curves) ──
+            model.eval()
+            # torch.inference_mode is faster than no_grad: it additionally
+            # skips version-counter increments and view-tracking bookkeeping.
+            with torch.inference_mode():
+                if use_tensor_mode:
+                    val_out       = model(X_val)
+                    epoch_val_acc = (val_out.argmax(1) == y_val).float().mean().item()
+                else:
+                    vp, vt = [], []
+                    for bX, bY in val_loader:
+                        bX = bX.to(device, non_blocking=True)
+                        bY = bY.to(device, non_blocking=True)
+                        vp.append(model(bX).argmax(1))
+                        vt.append(bY)
+                    epoch_val_acc = (torch.cat(vp) == torch.cat(vt)).float().mean().item()
+            model.train()
 
             history['train_loss'].append(epoch_train_loss)
             history['train_acc'].append(epoch_train_acc)
             history['val_acc'].append(epoch_val_acc)
 
-            # ── EMA-smoothed convergence detection ───────────────────────────
-            # For batch_size=1 SGD, each epoch's "loss" is an average over N
-            # weight snapshots — it's noisy even after true convergence, so
-            # abs(loss - prev_loss) < tol almost never fires.  The EMA of the
-            # epoch loss removes this noise and reliably detects plateau.
-            #
-            # Both criteria are checked; the first to fire wins, so we can never
-            # stop LATER than the original criterion alone would have.
-            if ema_loss is None:
-                ema_loss = epoch_train_loss
-            else:
-                ema_loss = ema_beta * ema_loss + (1.0 - ema_beta) * epoch_train_loss
-
-            raw_diff = abs(epoch_train_loss - prev_loss)
-            ema_diff = abs(ema_loss - prev_ema)
-
-            if raw_diff < tol or ema_diff < tol:
-                which = "raw" if raw_diff < tol else "EMA"
-                print(f"[{which}] Convergence at epoch {epoch + 1}. "
-                      f"raw_diff={raw_diff:.2e}  ema_diff={ema_diff:.2e}  tol={tol:.2e}")
+            # ── Early stopping (original criterion — unchanged) ───────────────
+            # abs(epoch_loss - prev_loss) < tol, exactly as specified.
+            loss_diff = abs(epoch_train_loss - prev_loss)
+            if loss_diff < tol:
+                print(f"Convergence reached at epoch {epoch + 1}. "
+                      f"Loss diff: {loss_diff:.6f} < {tol}")
                 break
 
             prev_loss = epoch_train_loss
-            prev_ema  = ema_loss
 
             # ── Throttled logging ─────────────────────────────────────────────
             if epoch % log_interval == 0:
