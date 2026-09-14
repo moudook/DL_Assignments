@@ -1,0 +1,125 @@
+import os
+import torch
+from torchvision import datasets, transforms
+from torch.utils.data import DataLoader
+
+class FlattenTransform:
+    """Transforms a 2D image tensor to a 1D vector."""
+    def __call__(self, x):
+        # x is of shape (C, H, W)
+        return x.view(-1)
+
+def get_dataloaders(data_dir, batch_size=None, is_full_batch=False, seed=42, device=None):
+    """
+    Returns train, val, and test dataloaders.
+    
+    Args:
+        data_dir (str): Path to the Group_11 dataset folder containing 'train', 'val', 'test'
+        batch_size (int): Batch size to use (ignored if is_full_batch=True)
+        is_full_batch (bool): If True, returns the entire dataset in a single batch
+        seed (int): Seed for deterministic shuffling of the training DataLoader
+        device (torch.device or None): Target device; when CUDA, enables pin_memory
+    """
+    transform = transforms.Compose([
+        transforms.Grayscale(), # ensure it's 1 channel
+        transforms.ToTensor(),
+        FlattenTransform()
+    ])
+
+    train_dir = os.path.join(data_dir, 'train')
+    val_dir = os.path.join(data_dir, 'val')
+    test_dir = os.path.join(data_dir, 'test')
+
+    train_dataset = datasets.ImageFolder(root=train_dir, transform=transform)
+    val_dataset = datasets.ImageFolder(root=val_dir, transform=transform)
+    test_dataset = datasets.ImageFolder(root=test_dir, transform=transform)
+
+    # Determine batch sizes
+    train_bs = len(train_dataset) if is_full_batch else batch_size
+    val_bs = len(val_dataset) # For validation/test we can always use full batch or a large batch
+    test_bs = len(test_dataset)
+    
+    # If is_full_batch is true, we want the whole dataset. 
+    # For optimizers like Adam or SGD, batch_size=1 is required by assignment.
+    # We will pass batch_size=1 for them, and is_full_batch=True for BGD, AdaGrad, RMSProp.
+
+    use_pin_memory = (device is not None and device.type == 'cuda')
+    train_generator = torch.Generator().manual_seed(seed)
+
+    # num_workers=0 is intentional. Each sample here is a 784-d flattened
+    # vector (~3KB) and the whole train split is ~11k samples, so decoding
+    # is essentially free — worker processes add pure overhead and no
+    # speedup. On Windows, num_workers>0 routes every batch through a
+    # named shared-memory file mapping; for the full-batch optimizers
+    # (BGD/AdaGrad/RMSProp) that means pushing the ENTIRE dataset through
+    # one shared-memory segment in a single collate call, which is what
+    # produced the "Couldn't open shared file mapping ... error code 1455"
+    # crash (Windows hit its page-file/commit limit). get_dataloaders() is
+    # also called fresh for every (architecture, optimizer) pair — 35
+    # times total — and with persistent_workers=True each call spawned new
+    # worker processes without the previous ones necessarily being torn
+    # down right away, so handle/shared-memory pressure built up across
+    # runs. That's what produced the later "MemoryError" while spawning a
+    # worker for SGD_Momentum. Single-process loading avoids both.
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=train_bs,
+        shuffle=True,
+        generator=train_generator,
+        pin_memory=use_pin_memory,
+        num_workers=0,
+    )
+    val_loader = DataLoader(
+        val_dataset,
+        batch_size=val_bs,
+        shuffle=False,
+        pin_memory=use_pin_memory,
+    )
+    test_loader = DataLoader(
+        test_dataset,
+        batch_size=test_bs,
+        shuffle=False,
+        pin_memory=use_pin_memory,
+    )
+
+    return train_loader, val_loader, test_loader
+
+
+def preload_tensors(loader, device):
+    """
+    Drains an entire DataLoader into a single pair of tensors and moves them
+    to `device` once.  The tensors live in memory for the lifetime of the
+    caller and are reused across all optimizer runs for a given architecture,
+    eliminating repeated PIL-decode / transform / collate overhead.
+
+    Args:
+        loader (DataLoader): Any DataLoader — single-batch (full-batch) or
+                             multi-batch.  Works correctly either way because
+                             we torch.cat all chunks.
+        device (torch.device): Target device (cpu or cuda).
+
+    Returns:
+        X (Tensor): shape (N, input_dim), dtype float32, on `device`.
+        y (Tensor): shape (N,),           dtype int64,   on `device`.
+
+    Note on memory:
+        Train set  — 11,385 × 784 × 4 B ≈  34 MB
+        Val   set  —  3,795 × 784 × 4 B ≈  11 MB
+        Test  set  —  3,795 × 784 × 4 B ≈  11 MB
+        Total ≈ 56 MB — trivially fits in 32 GB RAM or any modern GPU.
+    """
+    X_chunks, y_chunks = [], []
+    with torch.no_grad():
+        for batch_X, batch_y in loader:
+            X_chunks.append(batch_X)
+            y_chunks.append(batch_y)
+
+    X = torch.cat(X_chunks, dim=0).to(device)   # (N, 784)
+    y = torch.cat(y_chunks, dim=0).to(device)   # (N,)
+    return X, y
+
+
+def get_num_classes(data_dir):
+    train_dir = os.path.join(data_dir, 'train')
+    train_dataset = datasets.ImageFolder(root=train_dir)
+    return len(train_dataset.classes)
