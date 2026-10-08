@@ -177,53 +177,56 @@ Progress tracking (MANDATORY):
   case. That is how a crashed or externally-killed run gets noticed.
 - monitor.py must surface GPU temperature and flag >= 85C as a throttling warning.
 
-PLOTTING (MANDATORY - but SELECTIVE, not after every run):
-- Core principle: a multi-day run can die at any point, so a plot produced ONLY at the
-  very end is worthless if the run dies first. BUT plotting every one of ~40 runs
-  wastes the very time budget we are protecting. Both are true, so plotting is
-  MILESTONE-DRIVEN, not exhaustive.
-- DO plot at every MILESTONE - these are the non-negotiable plot points:
-  1. Task boundary: any plot that closes out a task's headline result.
-  2. Best-run-so-far for a task: the curve for the architecture/dimension that
-     currently leads on validation accuracy (re-rendered only when the leader changes).
-  3. Anything that feeds a later task's decision (e.g. Task-3's winner, which selects
-     the Task-5 bottleneck size).
-  4. Final plot at the end of each task, for the selected/best configuration.
-- DO NOT plot every intermediate run. A losing architecture at epoch 300 does not need
-  its own figure. Its numbers go in a TABLE; the table is the compact record, the plot
-  is for the runs you will actually discuss.
-- Superset/superseded curves are cheap to REDRAW from checkpoint history later without
-  re-running training. So: checkpoint everything, plot the milestones, regenerate the
-  rest on demand from history. That is the whole strategy - it removes the
-  plot-everything cost while keeping full recoverability.
-- A task is DONE only when its milestone plots exist. Individual runs within it need
-  only their checkpoints (see Checkpointing), which is what makes selective plotting
-  safe.
-- Never defer a milestone plot to a single "make all plots" pass at the end of the
-  pipeline. Plot at the milestone, then move on.
-- Plots are written atomically too (write .png.tmp, then os.replace). A truncated PNG
-  from an interrupted save is an unreadable image with a valid-looking name.
-- Required plot set (Assignment-3 used a "training error vs epochs" figure per
-  architecture with all optimizers superimposed; A4 extends this):
-  - Loss / reconstruction-error vs epoch for SELECTED runs, with the early-stopping
-    threshold line drawn so convergence is visible, not just asserted.
-  - Validation metric vs epoch (accuracy or recon error), train and val on one axes
-    where meaningful, so overfitting is visible.
-  - Confusion matrix for the best architecture of each task.
-  - Reconstruction image grids (original vs reconstructed) for each autoencoder -
-    these are required per architecture by the assignment, so they are NOT optional.
-  - Maximally-activating-input grids for Task-6 (all three variants - this is a
-    comparison figure and is explicitly required).
-  - Comparison bar charts across bottleneck sizes (32/64/128/256) per task - these
-    answer "which dimension is best" and are the highest-value figures in the report.
-    Bar charts are cheap (built from a results table, not from training), so always
-    make these.
-- Every plot gets a descriptive filename encoding what it shows, written under
-  <outdir>/plots/<task>/. Never overwrite a previous step's figure with a bare
-  name like "loss.png" - a days-long run whose figures overwrite each other is
-  unrecoverable.
-- Plots must be regenerable from saved checkpoints/history alone. If a plot cannot be
-  rebuilt without re-running training, the pipeline is not resumable.
+PLOTTING (MANDATORY - EXHAUSTIVE, then trimmed by hand):
+- POLICY REVERSED from an earlier milestone-only draft. The requirement is now
+  that the pipeline emit EVERY figure it plausibly can - every task, every
+  architecture, every bottleneck, every noise level, every split - so nothing
+  needs to be re-generated later. Trimming happens by DELETING unwanted files
+  from the folder tree, never by re-running training.
+- Per-run figures (for each (task, dimension/bottleneck, architecture) pair):
+    - loss vs epoch
+    - loss AND train/val accuracy vs epoch (two-panel)
+    - accuracy vs epoch
+    - per-class accuracy bar chart
+    - test confusion matrix (counts) AND row-normalised
+  Degenerate runs get the same treatment: a collapsed model's confusion matrix
+  is the evidence for its degeneration, not decoration.
+- Per-model figures for autoencoders:
+    - reconstruction grid per split, one image per class (A4 Task-2d)
+    - denoising triptych per split: clean / corrupted input / reconstruction
+      (A4 Task-5c)
+    - reconstruction error per split
+- Task-6: for EACH variant (plain AE, 20% denoising, 40% denoising):
+    - max-activating input + encoder weight, per unit
+    - max-activating inputs only
+    - encoder weight grid, all units
+    - activation histogram, weight histogram
+  Plus cross-variant comparisons (task6c).
+- Comparison figures per task: accuracy vs dimension, heatmap of
+  architecture x dimension (validation AND test), epochs vs dimension,
+  superimposed curves per architecture, generalisation gap, parameter count vs
+  reconstruction error.
+- Cross-task figures under plots/00_summary/: best per task against the A3
+  baseline, gap in percentage points, accuracy vs representation size for all
+  methods, per-class accuracy compared across tasks.
+- ORGANISATION IS MANDATORY. Figure tree, created before training starts:
+      plots/task1/ 01_training_curves  02_accuracy  03_confusion_matrices
+                  04_reconstructions  05_reconstruction_error
+                  06_weights_and_activations  07_representations  08_comparisons
+      (same subfolder names in tasks 2-6)
+      plots/task6/06_weights_and_activations/{01_plain_AE,
+          02_denoising_AE_20pct,03_denoising_AE_40pct}/
+      plots/00_summary/  + README.txt index
+  Numbered prefixes so related figures group together in a listing, and the same
+  conceptual subfolder name in every task so a question has one place to look.
+- plots/00_summary/README.txt records the folder -> question mapping, so
+  navigating the tree never depends on memorising directory names.
+- File names must be self-describing and encode task / dimension / architecture /
+  noise level / split. Bare "loss.png" names are not acceptable - figures from
+  different runs would overwrite each other.
+- All writes atomic (write .png.tmp then os.replace). Verified: no .tmp leftovers
+  after a full run.
+- Verified output: 408 figures in 28 folders for one full run, in ~3.8 min.
 
 Long-run budget:
 - Keep Assignment-3's stopping tolerance (1e-4) and learning rate (0.001) for

@@ -116,6 +116,12 @@ def main():
 
     os.makedirs(args.outdir, exist_ok=True)
 
+    # Create the whole figure tree BEFORE training starts. Every task, every
+    # subfolder, even ones a run may never reach, so the structure is browsable
+    # from the first moment and the numbered layout is guaranteed present.
+    import plots
+    plots.prepare_all_dirs(args.outdir, sorted(TASKS))
+
     # Record the configuration alongside the results so every number in the
     # report is traceable to the run that produced it.
     atomic_write_text(json.dumps({
@@ -263,9 +269,30 @@ def main():
 
         log(f"TASK {t} finished in {(time.time() - t0) / 60:.1f} min")
 
+    # ── cross-task figures: comparisons that only exist across tasks ──────────
+    log("# building cross-task summary figures")
+    try:
+        from summary_figures import build_summary
+        build_summary(args.outdir)
+    except Exception as exc:
+        # Summary figures are analysis, not results. Losing them must not
+        # invalidate a completed pipeline, so the failure is reported loudly and
+        # the pipeline still ends in a usable state.
+        print(f"[WARN] summary figures failed: {exc!r}")
+
     total = (time.time() - t_start) / 60
     atomic_write_text(json.dumps(summary, indent=2, default=float),
                       os.path.join(args.outdir, "summary.json"))
+
+    # Drop figure subfolders that never received a figure, so browsing the tree
+    # shows only folders that actually hold something.
+    try:
+        import plots
+        pruned = plots.prune_empty_dirs(args.outdir)
+        if pruned:
+            print(f"Pruned {len(pruned)} empty figure subfolder(s)")
+    except Exception as exc:
+        print(f"[WARN] could not prune empty figure folders: {exc!r}")
 
     print("\n" + "=" * 70)
     print(f"PIPELINE COMPLETE — {total:.1f} min total")

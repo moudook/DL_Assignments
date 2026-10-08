@@ -51,7 +51,7 @@ def run_task2(data, outdir="results", bottlenecks=BOTTLENECKS, max_epochs=MAX_EP
     """
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    ae_dir = plots.ensure_dir(os.path.join(outdir, "plots", "task2"))
+    dirs = plots.task_dirs(outdir, 2)
 
     results = {
         "task": 2,
@@ -102,16 +102,44 @@ def run_task2(data, outdir="results", bottlenecks=BOTTLENECKS, max_epochs=MAX_EP
                     orig, rec, CLASS_NAMES,
                     f"{KIND_LABEL[kind]}, bottleneck k={b} — {split} split "
                     f"(one image per class)",
-                    os.path.join(ae_dir,
+                    os.path.join(dirs["recon"],
                                  f"task2_{kind}_k{b}_recon_{split}.png"))
                 grid_paths[split] = p
 
-            # Loss curve milestone for this architecture.
+            # Per-model training curve, plus its own loss curve.
+            plots.loss_and_accuracy(
+                res["history"],
+                f"Task-2: {KIND_LABEL[kind]} k={b} — reconstruction loss vs epoch",
+                os.path.join(dirs["training"],
+                             f"task2_{kind}_k{b}_loss_accuracy.png"),
+                tol=TOL)
             plots.loss_curve(
                 res["history"],
                 f"Task-2: {KIND_LABEL[kind]} k={b} — reconstruction MSE vs epoch",
-                os.path.join(ae_dir, f"task2_{kind}_k{b}_loss.png"),
+                os.path.join(dirs["training"],
+                             f"task2_{kind}_k{b}_loss.png"),
                 ylabel="reconstruction MSE (train)")
+
+            # Reconstruction-error figures for this specific model, so the
+            # cross-model aggregates have a per-model counterpart to point at.
+            plots.recon_error_bars(
+                {"reconstruction error": recon},
+                f"Task-2: {KIND_LABEL[kind]} k={b} — reconstruction error per split",
+                os.path.join(dirs["recon_error"],
+                             f"task2_{kind}_k{b}_recon_error.png"))
+
+            # Examples of a single digit reconstructed at increasing bottleneck
+            # sizes: makes the information loss per k legible for one image
+            # rather than averaged across a grid.
+            idx, _ = one_per_class(data, "test")
+            o, r, _ = reconstruction_grid(trained, data, "test", [idx[0]],
+                                          device=device)
+            plots.reconstruction_grid(
+                o, r, [CLASS_NAMES[0]],
+                f"Task-2: {KIND_LABEL[kind]} k={b} — reconstruction of a single "
+                f"test digit '{CLASS_NAMES[0]}'",
+                os.path.join(dirs["recon"],
+                             f"task2_{kind}_k{b}_single_digit.png"))
 
             results["by_model"][f"{kind}_{b}"] = {
                 "kind": kind,
@@ -125,28 +153,83 @@ def run_task2(data, outdir="results", bottlenecks=BOTTLENECKS, max_epochs=MAX_EP
                 "model_state": res["model_state"],
             }
 
-    # Milestone figures across the whole task.
+    # ── Task-2c comparison figures ───────────────────────────────────────────
     plots.recon_error_bars(
         {name: e["recon_error"] for name, e in results["by_model"].items()},
-        "Task-2: reconstruction error per split, all architectures",
-        os.path.join(ae_dir, "task2_recon_error_all.png"))
+        "Task-2c: reconstruction error per split, all architectures",
+        os.path.join(dirs["recon_error"], "task2_recon_error_all.png"))
 
     for kind in kinds:
         subset = {f"k={b}": results["by_model"][f"{kind}_{b}"]["recon_error"]
                   for b in bottlenecks}
         plots.recon_error_bars(
-            subset, f"Task-2: {KIND_LABEL[kind]} — reconstruction error vs bottleneck",
-            os.path.join(ae_dir, f"task2_recon_error_{kind}.png"))
+            subset, f"Task-2c: {KIND_LABEL[kind]} — reconstruction error vs bottleneck",
+            os.path.join(dirs["recon_error"], f"task2_recon_error_{kind}.png"))
+        # Reconstruction error plotted against bottleneck size, so the "does a
+        # bigger bottleneck reconstruct better" question is answered by a trend
+        # line rather than by reading bars.
+        plots.dimension_bars(
+            {"train": [1000 * results["by_model"][f"{kind}_{b}"]["recon_error"]["train"]
+                       for b in bottlenecks],
+             "val": [1000 * results["by_model"][f"{kind}_{b}"]["recon_error"]["val"]
+                     for b in bottlenecks],
+             "test": [1000 * results["by_model"][f"{kind}_{b}"]["recon_error"]["test"]
+                      for b in bottlenecks]},
+            [str(b) for b in bottlenecks],
+            f"Task-2c: {KIND_LABEL[kind]} — reconstruction error (x1000) vs bottleneck",
+            os.path.join(dirs["recon_error"],
+                         f"task2_recon_vs_bottleneck_{kind}.png"),
+            ylabel="reconstruction error x1000 (lower is better)")
 
+    # 1-hidden vs 3-hidden at each bottleneck, both depths on one figure.
     plots.dimension_bars(
-        {"test recon error": [1000 * results["by_model"][f"1hidden_{b}"]["recon_error"]["test"]
-                              for b in bottlenecks],
-         "test recon error (3hidden)": [1000 * results["by_model"][f"3hidden_{b}"]["recon_error"]["test"]
-                                        for b in bottlenecks]},
+        {"1-hidden AE": [1000 * results["by_model"][f"1hidden_{b}"]["recon_error"]["test"]
+                         for b in bottlenecks],
+         "3-hidden AE": [1000 * results["by_model"][f"3hidden_{b}"]["recon_error"]["test"]
+                         for b in bottlenecks]},
         [str(b) for b in bottlenecks],
-        "Task-2: test reconstruction error x1000 vs bottleneck size",
-        os.path.join(ae_dir, "task2_recon_vs_bottleneck.png"),
-        ylabel="recon error x1000 (lower is better)")
+        "Task-2c: test reconstruction error (x1000), 1-hidden vs 3-hidden",
+        os.path.join(dirs["recon_error"],
+                     "task2_depth_comparison.png"),
+        ylabel="reconstruction error x1000 (lower is better)")
+
+    # Recon error vs parameter count: shows whether the extra depth buys
+    # anything proportional to what it costs.
+    for kind in kinds:
+        plots.dimension_bars(
+            {"params (k)": [results["by_model"][f"{kind}_{b}"]["params"] / 1000
+                            for b in bottlenecks],
+             "test recon (x1000)": [1000 * results["by_model"][f"{kind}_{b}"]["recon_error"]["test"]
+                                    for b in bottlenecks]},
+            [str(b) for b in bottlenecks],
+            f"Task-2: {KIND_LABEL[kind]} — parameter count vs reconstruction error",
+            os.path.join(dirs["recon_error"],
+                         f"task2_{kind}_params_vs_error.png"))
+
+    # Superimposed curves: one per depth, all bottlenecks together. Frozen the
+    # training set means the y-axis is directly comparable between them.
+    for kind in kinds:
+        hs, ls = [], []
+        for b in bottlenecks:
+            h = results["by_model"][f"{kind}_{b}"]["history"]
+            if h:
+                hs.append(h)
+                ls.append(f"k={b}")
+        plots.superimposed_curves(
+            hs, ls,
+            f"Task-2: {KIND_LABEL[kind]} — reconstruction loss vs epoch, all bottlenecks",
+            os.path.join(dirs["comparison"],
+                         f"task2_{kind}_loss_across_bottlenecks.png"),
+            ylabel="reconstruction MSE (train)")
+
+    # Generalisation gap: train vs test reconstruction error. A widening gap would
+    # mean the encoder is memorising training images.
+    plots.generalisation_gap(
+        {name: 1000 * (e["recon_error"]["train"] - e["recon_error"]["test"])
+         for name, e in results["by_model"].items()},
+        "Task-2: reconstruction generalisation gap (train - test, x1000)",
+        os.path.join(dirs["comparison"], "task2_generalisation_gap.png"),
+        ylabel="train - test recon error (x1000)")
 
     # Best bottleneck per depth, by test reconstruction error.
     for kind in kinds:

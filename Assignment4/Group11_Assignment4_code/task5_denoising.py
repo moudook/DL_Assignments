@@ -92,7 +92,8 @@ def run_task5(data, outdir="results", max_epochs=MAX_EPOCHS, device=None,
     """
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    out_dir = plots.ensure_dir(os.path.join(outdir, "plots", "task5"))
+    out_dir = plots.task_dirs(outdir, 5)["root"]
+    dirs = plots.task_dirs(outdir, 5)
 
     if bottleneck is None:
         bottleneck, sel_arch = resolve_bottleneck(outdir)
@@ -105,8 +106,7 @@ def run_task5(data, outdir="results", max_epochs=MAX_EPOCHS, device=None,
           f"(from Task-3), classifier arch {task3_arch} (from Task-3)")
 
     results = {
-        "task": 5,
-        "name": "Denoising autoencoders",
+        "task": 5,        "name": "Denoising autoencoders",
         "bottleneck": bottleneck,
         "bottleneck_source": "Task-3 best test accuracy (A4 Task-5a)",
         "classifier_arch": task3_arch,
@@ -147,7 +147,9 @@ def run_task5(data, outdir="results", max_epochs=MAX_EPOCHS, device=None,
         print(f"  recon error  train={recon['train']:.6f}  "
               f"val={recon['val']:.6f}  test={recon['test']:.6f}")
 
-        # Task-5c: reconstruction grids per split, with originals.
+        # Task-5c: reconstruction grids per split, with originals. Also a
+        # triptych per split showing what the network was FED (corrupted input),
+        # since "reconstruction" alone is ambiguous for a denoising model.
         grids = {}
         for split in ("train", "val", "test"):
             idx, _ = one_per_class(data, split)
@@ -155,8 +157,30 @@ def run_task5(data, outdir="results", max_epochs=MAX_EPOCHS, device=None,
                                               device=device)
             grids[split] = plots.reconstruction_grid(
                 orig, rec, CLASS_NAMES,
-                f"Denoising AE {tag}% noise, k={bottleneck} — {split} split",
-                os.path.join(out_dir, f"task5_dae_{tag}_recon_{split}.png"))
+                f"Denoising AE {tag}% noise, k={bottleneck} — {split} split "
+                f"(one image per class)",
+                os.path.join(dirs["recon"],
+                             f"task5_dae_{tag}_recon_{split}.png"))
+
+            # Clean / corrupted / reconstructed: the noise used to build the
+            # model. Sampled with a seeded generator so the figure shows the same
+            # corruption the model would have seen.
+            X = data[f"X_{split}"]
+            sel = X[torch.as_tensor(idx, device=X.device)]
+            from models import make_noise
+            gen2 = torch.Generator(device=X.device).manual_seed(42)
+            noisy = make_noise(sel, noise, gen2)
+            with torch.no_grad():
+                rec2 = trained(noisy)
+            clean = sel.reshape(-1, 28, 28).cpu().numpy()
+            nois = noisy.reshape(-1, 28, 28).cpu().numpy()
+            recs = rec2.reshape(-1, 28, 28).cpu().numpy()
+            plots.denoise_triptych(
+                clean, nois, recs,
+                f"Task-5: denoising AE {tag}% noise, k={bottleneck} — {split} "
+                f"(clean / corrupted / reconstructed)",
+                os.path.join(dirs["recon"],
+                             f"task5_dae_{tag}_triptych_{split}.png"))
 
         # Task-5d: classify the representation with Task-3's best architecture.
         red = encode_all(trained, data)
@@ -172,21 +196,49 @@ def run_task5(data, outdir="results", max_epochs=MAX_EPOCHS, device=None,
         clf_trained.load_state_dict(cres["model_state"])
         test_res = evaluate_classifier(clf_trained, red, device=device,
                                        split="test")
+        train_clf_res = evaluate_classifier(clf_trained, red, device=device,
+                                            split="train")
 
         print(f"  classifier ({task3_arch}): val={100 * cres['final_val_acc']:.2f}%  "
               f"TEST={100 * test_res['accuracy']:.2f}%")
 
+        # Confusion matrices (raw + normalised) and per-class breakdown.
         plots.confusion_matrix(
             test_res["confusion_matrix"],
-            f"Task-5 test confusion matrix — denoising AE {tag}%, k={bottleneck}\n"
-            f"test accuracy {100 * test_res['accuracy']:.2f}%",
-            os.path.join(out_dir, f"task5_confusion_{tag}.png"))
+            f"Task-5: denoising AE {tag}% noise, k={bottleneck} — test "
+            f"confusion matrix\ntest accuracy {100 * test_res['accuracy']:.2f}%",
+            os.path.join(dirs["confusion"], f"task5_confusion_{tag}_test.png"))
+        plots.confusion_matrix(
+            test_res["confusion_matrix"],
+            f"Task-5: denoising AE {tag}% noise, k={bottleneck} — normalised "
+            f"by true class\ntest accuracy {100 * test_res['accuracy']:.2f}%",
+            os.path.join(dirs["confusion"], f"task5_confusion_{tag}_test_norm.png"),
+            normalize=True)
+        plots.per_class_accuracy(
+            test_res["per_class"],
+            f"Task-5: denoising AE {tag}% noise, k={bottleneck} — per-class "
+            f"test accuracy",
+            os.path.join(dirs["accuracy"], f"task5_per_class_{tag}.png"))
 
+        # Autoencoder training curve + classifier training/accuracy curves.
         plots.loss_curve(
             res["history"],
             f"Task-5: denoising AE {tag}% noise — reconstruction MSE vs epoch",
-            os.path.join(out_dir, f"task5_dae_{tag}_loss.png"),
+            os.path.join(dirs["training"], f"task5_dae_{tag}_loss.png"),
             ylabel="reconstruction MSE (train)")
+        plots.loss_and_accuracy(
+            cres["train_loss"],
+            f"Task-5: {tag}% noise — classifier loss and accuracy vs epoch",
+            os.path.join(dirs["training"], f"task5_clf_{tag}_loss_accuracy.png"),
+            tol=TOL)
+        plots.accuracy_curve(
+            cres["train_loss"],
+            f"Task-5: {tag}% noise — classifier accuracy vs epoch",
+            os.path.join(dirs["accuracy"], f"task5_clf_{tag}_accuracy.png"))
+        plots.recon_error_bars(
+            {"reconstruction error": recon},
+            f"Task-5: denoising AE {tag}% noise — reconstruction error per split",
+            os.path.join(dirs["recon_error"], f"task5_{tag}_recon_error.png"))
 
         results["by_noise"][tag] = {
             "noise": noise,
@@ -208,19 +260,20 @@ def run_task5(data, outdir="results", max_epochs=MAX_EPOCHS, device=None,
             "classifier": {
                 "arch": task3_arch,
                 "val_acc": cres["final_val_acc"],
+                "train_acc": train_clf_res["accuracy"],
                 "test_acc": test_res["accuracy"],
-                "train_acc": test_res and None,
                 "epochs_run": cres["epochs_run"],
                 "confusion_matrix": test_res["confusion_matrix"],
+                "per_class": test_res["per_class"],
                 "history": cres["train_loss"],
             },
         }
 
-    # Milestone figures.
+    # ── Task-5 comparison figures ────────────────────────────────────────────
     plots.recon_error_bars(
         {name: e["recon_error"] for name, e in results["by_noise"].items()},
-        f"Task-5: denoising AE reconstruction error, k={bottleneck}",
-        os.path.join(out_dir, "task5_recon_error.png"))
+        f"Task-5b: denoising AE reconstruction error, k={bottleneck}",
+        os.path.join(dirs["recon_error"], "task5_recon_error_by_noise.png"))
 
     plots.dimension_bars(
         {"validation accuracy": [100 * e["classifier"]["val_acc"]
@@ -228,18 +281,49 @@ def run_task5(data, outdir="results", max_epochs=MAX_EPOCHS, device=None,
          "test accuracy": [100 * e["classifier"]["test_acc"]
                            for e in results["by_noise"].values()]},
         [f"{int(n * 100)}% noise" for n in noise_levels],
-        f"Task-5: classification from denoising AE representation\n"
-        f"(k={bottleneck}, {task3_arch})",
-        os.path.join(out_dir, "task5_accuracy_by_noise.png"))
+        f"Task-5d: classification from denoising AE representation\n"
+        f"(k={bottleneck}, {task3_arch} — architecture from Task-3)",
+        os.path.join(dirs["accuracy"], "task5_accuracy_by_noise.png"))
 
+    # Reconstruction error against noise level, which is the quantity that
+    # reveals the tradeoff Task-5 is about: more corruption is harder to
+    # reconstruct, but forces the model to learn noise-invariant features.
+    plots.dimension_bars(
+        {"train": [1000 * e["recon_error"]["train"]
+                   for e in results["by_noise"].values()],
+         "val": [1000 * e["recon_error"]["val"]
+                 for e in results["by_noise"].values()],
+         "test": [1000 * e["recon_error"]["test"]
+                  for e in results["by_noise"].values()]},
+        [f"{int(n * 100)}% noise" for n in noise_levels],
+        f"Task-5b: reconstruction error (x1000) vs noise level, k={bottleneck}",
+        os.path.join(dirs["recon_error"], "task5_recon_vs_noise.png"),
+        ylabel="reconstruction error x1000 (lower is better)")
+
+    # Generalisation gap of the classifiers, per noise level.
+    plots.generalisation_gap(
+        {f"{int(e['noise'] * 100)}% noise":
+            100 * (e["classifier"]["train_acc"] - e["classifier"]["test_acc"])
+         for e in results["by_noise"].values()},
+        "Task-5: train minus test accuracy, classifier generalisation by noise",
+        os.path.join(dirs["comparison"], "task5_generalisation_gap.png"))
+
+    # Superimposed AE training curves: the two noise levels must be compared
+    # against each other, which is the whole point of Task-5's design.
     hist, labels = [], []
     for name, e in results["by_noise"].items():
         if e["history"]:
             hist.append(e["history"])
-            labels.append(f"{name} (train recon)")
+            labels.append(f"{name} noise")
     plots.superimposed_curves(
-        hist, labels, "Task-5: denoising AE training reconstruction loss",
-        os.path.join(out_dir, "task5_loss_curves.png"))
+        hist, labels, "Task-5: denoising AE training reconstruction loss by noise",
+        os.path.join(dirs["comparison"], "task5_loss_curves_by_noise.png"))
+    for name, e in results["by_noise"].items():
+        plots.loss_and_accuracy(
+            e["classifier"]["history"],
+            f"Task-5: {name} noise — classifier loss and accuracy vs epoch",
+            os.path.join(dirs["comparison"],
+                         f"task5_clf_{name}_loss_accuracy.png"), tol=TOL)
 
     best_tag = max(results["by_noise"].items(),
                    key=lambda kv: kv[1]["classifier"]["test_acc"])

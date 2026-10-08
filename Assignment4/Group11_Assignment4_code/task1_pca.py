@@ -53,7 +53,7 @@ def run_task1(data, outdir="results", dims=DIMENSIONS, max_epochs=MAX_EPOCHS,
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     archs = archs or list(CLASSIFIER_ARCHS)
-    pca_dir = plots.ensure_dir(os.path.join(outdir, "plots", "task1"))
+    dirs = plots.task_dirs(outdir, 1)
 
     results = {
         "task": 1,
@@ -74,49 +74,37 @@ def run_task1(data, outdir="results", dims=DIMENSIONS, max_epochs=MAX_EPOCHS,
             "few epochs precisely because nothing is learning."),
     }
 
+    # One full-spectrum fit: the per-k projections are just its prefixes, so the
+    # analysis figures need no refitting. Previously a k=max(dims) fit was made
+    # per dimension and its 64-point curve was labelled "784 components", which
+    # misreported what the figure actually showed.
+    wide = PCA(k=784).fit(data["X_train"])
+
     # Projected splits per dimension, retained so best-architecture selection can
-    # be redone after degenerate runs are excluded.
+    # be redone after degenerate runs are excluded, without refitting PCA.
     _representation_cache = {}
 
     for k in dims:
         print(f"\n{'=' * 60}\nTask-1: PCA k={k}\n{'=' * 60}")
-        # Keep the projected splits so the architecture can be re-selected after
+        # The projected splits, so the architecture can be re-selected after
         # degenerate runs are excluded, without refitting PCA.
-        _representation_cache[k] = PCA(k=k).fit(data["X_train"]).project_all(data)
-
-        # Fit on TRAIN ONLY, then project all three splits with the train mean.
-        pca = PCA(k=k).fit(data["X_train"])
-        red = pca.project_all(data)
+        wide.k = k
+        _representation_cache[k] = wide.project_all(data)
+        red = _representation_cache[k]
         var_ret = red["variance_retained"]
         print(f"  variance retained: {100 * var_ret:.2f}%")
 
-        pca.save(os.path.join(outdir, f"pca_{k}.pt"))
-
-        # Variance curve milestone figure (Task-1 explanation for why accuracy
-        # rises with k). Full 784-point curve from a k=784 fit is exact and
-        # costs ~1s, so use a wide fit for the curve and the k-fit for projection.
-        wide = PCA(k=max(dims)).fit(data["X_train"])
-        curve = wide.explained_variance_curve([64]).cpu().tolist()
+        # Task-1a analysis figures: cumulative variance retained, and the eigen
+        # spectrum that explains WHY it decays that way. Both use the same
+        # 784-component fit, so they are consistent with each other.
+        curve = wide.explained_variance_curve().cpu().tolist()
         plots.pca_variance_curve(
-            curve, f"PCA: cumulative variance retained (784 components)",
-            os.path.join(pca_dir, "pca_variance_retained.png"))
-
-        # PCA reconstruction grid: visual evidence of what each k preserves.
-        sample_idx = [0, 2277, 4554]        # one sample from 3 of the 5 classes
-        orig = data["X_train"][sample_idx].reshape(-1, 28, 28).cpu().numpy()
-        k_recons = {}
-        for kk in dims:
-            pk = PCA(k=kk).fit(data["X_train"])
-            z = pk.transform(data["X_train"][sample_idx])
-            rec = (z @ pk.components[:, :kk].T + pk.mean)
-            # Drop the sample axis: pca_reconstruction_grid lays out ONE original
-            # against one reconstruction per k, so each entry must be a single
-            # 28x28 image, not a (3,28,28) stack.
-            k_recons[kk] = np.clip(
-                rec.reshape(-1, 28, 28)[0].cpu().numpy(), 0, 1)
-        plots.pca_reconstruction_grid(
-            [orig[0]], k_recons, "PCA reconstruction of a '0' at each k",
-            os.path.join(pca_dir, "pca_reconstructions.png"))
+            curve, "Task-1a: cumulative variance retained vs retained dimension",
+            os.path.join(dirs["represent"], "task1_variance_retained.png"))
+        plots.eigen_spectrum(
+            wide.eigenvalues.cpu().numpy(),
+            "Task-1a: eigenvalue spectrum (which components matter)",
+            os.path.join(dirs["represent"], "task1_eigen_spectrum.png"))
 
         dim_entry = {
             "k": k,
@@ -147,6 +135,29 @@ def run_task1(data, outdir="results", dims=DIMENSIONS, max_epochs=MAX_EPOCHS,
             print(f"  {arch}: val={100 * res['final_val_acc']:.2f}% "
                   f"({res['epochs_run']} epochs){flag}")
 
+            # Exhaustive per-run figures: loss AND accuracy, so a reader can see
+            # convergence and whether the run actually learned, for EVERY (k, arch)
+            # pair and not only the winner. Anything not needed later is deleted
+            # from the folder tree, not regenerated.
+            hist = res["train_loss"]
+            if hist:
+                plots.loss_and_accuracy(
+                    hist,
+                    f"Task-1: PCA k={k}, {arch} — loss and accuracy vs epoch",
+                    os.path.join(dirs["training"],
+                                 f"task1_k{k}_{arch}_loss_accuracy.png"),
+                    tol=TOL)
+                plots.accuracy_curve(
+                    hist,
+                    f"Task-1: PCA k={k}, {arch} — accuracy vs epoch",
+                    os.path.join(dirs["accuracy"],
+                                 f"task1_k{k}_{arch}_accuracy.png"))
+                plots.loss_curve(
+                    hist,
+                    f"Task-1: PCA k={k}, {arch} — training loss vs epoch",
+                    os.path.join(dirs["training"],
+                                 f"task1_k{k}_{arch}_loss.png"))
+
         # Select best architecture on VALIDATION accuracy. Ties broken by
         # earliest convergence so the cheaper model wins an exact tie.
         best_arch = max(
@@ -172,12 +183,51 @@ def run_task1(data, outdir="results", dims=DIMENSIONS, max_epochs=MAX_EPOCHS,
               f"val={100 * best['val_acc']:.2f}%  "
               f"TEST={100 * test_res['accuracy']:.2f}%")
 
-        # Milestone figure: confusion matrix for the selected architecture.
+        # Confusion matrix + per-class breakdown for the SELECTED architecture.
         plots.confusion_matrix(
             test_res["confusion_matrix"],
-            f"Task-1 test confusion matrix — PCA k={k}, {best_arch}\n"
+            f"Task-1: PCA k={k}, {best_arch} — test confusion matrix\n"
             f"test accuracy {100 * test_res['accuracy']:.2f}%",
-            os.path.join(pca_dir, f"task1_confusion_pca{k}_{best_arch}.png"))
+            os.path.join(dirs["confusion"],
+                         f"task1_k{k}_{best_arch}_confusion_test.png"))
+        plots.confusion_matrix(
+            test_res["confusion_matrix"],
+            f"Task-1: PCA k={k}, {best_arch} — normalised by true class\n"
+            f"test accuracy {100 * test_res['accuracy']:.2f}%",
+            os.path.join(dirs["confusion"],
+                         f"task1_k{k}_{best_arch}_confusion_test_norm.png"),
+            normalize=True)
+        plots.per_class_accuracy(
+            test_res["per_class"],
+            f"Task-1: PCA k={k}, {best_arch} — per-class test accuracy",
+            os.path.join(dirs["accuracy"],
+                         f"task1_k{k}_{best_arch}_per_class.png"))
+
+        # Confusion matrix for EVERY architecture that ran, degenerate ones
+        # included. A collapsed model's matrix is informative: it shows the
+        # model predicted a single class for everything, which is the evidence
+        # for the degeneration note rather than an assertion about it.
+        for arch, av in dim_entry["architectures"].items():
+            if arch == best_arch:
+                continue
+            am = build_classifier(arch, input_dim=k,
+                                  num_classes=len(CLASS_NAMES)).to(device)
+            am.load_state_dict(av["model_state"])
+            ar = evaluate_classifier(am, red, device=device, split="test")
+            av["test_accuracy_all_archs"] = ar["accuracy"]
+            deg = " (DEGENERATE)" if av.get("degenerate") else ""
+            plots.confusion_matrix(
+                ar["confusion_matrix"],
+                f"Task-1: PCA k={k}, {arch} — test confusion matrix{deg}\n"
+                f"test accuracy {100 * ar['accuracy']:.2f}%, "
+                f"val {100 * av['val_acc']:.2f}% ({av['epochs_run']} epochs)",
+                os.path.join(dirs["confusion"],
+                             f"task1_k{k}_{arch}_confusion_test.png"))
+            plots.per_class_accuracy(
+                ar["per_class"],
+                f"Task-1: PCA k={k}, {arch} — per-class test accuracy{deg}",
+                os.path.join(dirs["accuracy"],
+                             f"task1_k{k}_{arch}_per_class.png"))
 
         results["by_dimension"][k] = dim_entry
 
@@ -229,21 +279,49 @@ def run_task1(data, outdir="results", dims=DIMENSIONS, max_epochs=MAX_EPOCHS,
     print(f"\n  BEST dimension by test accuracy: k={results['best_dimension']} "
           f"({100 * results['best_test_accuracy']:.2f}%)")
 
-    # Milestone comparison bars across dimensions — the figure that answers
-    # "which dimension is best". Built from the results table, so essentially free.
+    # ── Task-1c comparison figures ───────────────────────────────────────────
+    # Accuracy vs dimension answers "which dimension is best" directly. The A3
+    # baseline line is drawn on every one so the comparison in Task-1d is visible
+    # in the figure rather than only in the text.
     plots.dimension_bars(
         {"test accuracy": [100 * results["by_dimension"][d]["test_accuracy"]
                            for d in dims],
-         "val accuracy": [100 * max(
+         "best val accuracy": [100 * max(
              results["by_dimension"][d]["architectures"][a]["val_acc"]
              for a in archs) for d in dims]},
         [str(d) for d in dims],
-        "Task-1: PCA classification accuracy vs retained dimension",
-        os.path.join(pca_dir, "task1_accuracy_vs_dimension.png"),
+        "Task-1c: PCA classification accuracy vs retained dimension",
+        os.path.join(dirs["comparison"], "task1_accuracy_vs_dimension.png"),
         ref=100 * A3_TEST_ACC,
-        ref_label="A3 baseline (784-d input, NAG) 98.76%")
+        ref_label="A3 baseline (raw 784-d, NAG) 98.76%")
 
-    # Milestone: loss curves for the selected architecture at each dimension.
+    # epochs-to-convergence per dimension, so the cost of each dimension is
+    # comparable with its accuracy rather than being an invisible quantity.
+    plots.dimension_bars(
+        {"epochs": [results["by_dimension"][d]["architectures"][
+            results["by_dimension"][d]["best_arch"]]["epochs_run"] for d in dims]},
+        [str(d) for d in dims],
+        "Task-1c: epochs to convergence vs retained dimension (best architecture)",
+        os.path.join(dirs["comparison"], "task1_epochs_vs_dimension.png"),
+        ylabel="epochs (lower is cheaper)")
+
+    # Architecture x dimension heatmaps for validation and test accuracy.
+    plots.accuracy_heatmap(
+        archs, [str(d) for d in dims],
+        [[100 * results["by_dimension"][d]["architectures"][a]["val_acc"]
+          for d in dims] for a in archs],
+        "Task-1b: validation accuracy by architecture x retained dimension",
+        os.path.join(dirs["comparison"], "task1_heatmap_val.png"),
+        rowlabel="architecture", collabel="retained dimension k")
+    plots.accuracy_heatmap(
+        archs, [str(d) for d in dims],
+        [[100 * results["by_dimension"][d]["architectures"][a].get(
+            "test_accuracy_all_archs", float("nan")) for d in dims] for a in archs],
+        "Task-1b: test accuracy by architecture x retained dimension",
+        os.path.join(dirs["comparison"], "task1_heatmap_test.png"),
+        rowlabel="architecture", collabel="retained dimension k")
+
+    # Superimposed loss curves, for every dimension x its selected architecture.
     hist, labels = [], []
     for d in dims:
         a = results["by_dimension"][d]["best_arch"]
@@ -252,8 +330,31 @@ def run_task1(data, outdir="results", dims=DIMENSIONS, max_epochs=MAX_EPOCHS,
             hist.append(h)
             labels.append(f"k={d} ({a})")
     plots.superimposed_curves(
-        hist, labels, "Task-1: training loss vs epoch (best arch per dimension)",
-        os.path.join(pca_dir, "task1_loss_curves.png"))
+        hist, labels, "Task-1: training loss vs epoch (best architecture per dimension)",
+        os.path.join(dirs["comparison"], "task1_loss_curves_by_dimension.png"))
+
+    # One curve per architecture, superimposed across dimensions: shows whether
+    # an architecture's advantage is consistent or specific to one dimension.
+    for a in archs:
+        hs, ls = [], []
+        for d in dims:
+            h = results["by_dimension"][d]["architectures"][a]["history"]
+            if h:
+                hs.append(h)
+                ls.append(f"k={d}")
+        if len(hs) > 1:
+            plots.superimposed_curves(
+                hs, ls, f"Task-1: {a} training loss across dimensions",
+                os.path.join(dirs["comparison"],
+                             f"task1_{a}_loss_across_dimensions.png"))
+
+    # Generalisation gap for every selected configuration.
+    plots.generalisation_gap(
+        {f"k={d}": 100 * (results["by_dimension"][d]["train_accuracy"]
+                          - results["by_dimension"][d]["test_accuracy"])
+         for d in dims},
+        "Task-1: train minus test accuracy by dimension (generalisation)",
+        os.path.join(dirs["comparison"], "task1_generalisation_gap.png"))
 
     # Task-1d comparison against A3.
     gap = 100 * (results["best_test_accuracy"] - A3_TEST_ACC)

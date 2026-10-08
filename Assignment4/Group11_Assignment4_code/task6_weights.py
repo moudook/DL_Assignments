@@ -29,6 +29,7 @@ import numpy as np
 import torch
 
 import plots
+from plots import ensure_dir
 from data import load_splits
 from evaluate import maximally_activating
 from models import build_autoencoder, build_denoising_autoencoder
@@ -97,7 +98,16 @@ def run_task6(data, outdir="results", max_epochs=MAX_EPOCHS, device=None,
     """
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    out_dir = plots.ensure_dir(os.path.join(outdir, "plots", "task6"))
+    # Group output under a folder per AE variant so the three required
+    # comparisons (Task-6a plain, Task-6b both denoisers, Task-6c between them)
+    # each have their own clearly-labelled directory.
+    dirs = plots.task_dirs(outdir, 6)
+    V = {
+        "plain_ae":     ensure_dir(os.path.join(dirs["weights"], "01_plain_AE")),
+        "denoise20":    ensure_dir(os.path.join(dirs["weights"], "02_denoising_AE_20pct")),
+        "denoise40":    ensure_dir(os.path.join(dirs["weights"], "03_denoising_AE_40pct")),
+    }
+    cmp_dir = ensure_dir(os.path.join(dirs["comparison"]))
 
     if bottleneck is None:
         bottleneck, sel = resolve_selection(outdir)
@@ -173,20 +183,34 @@ def run_task6(data, outdir="results", max_epochs=MAX_EPOCHS, device=None,
         ma = maximally_activating(model, X_train)
         n_show = results["units_shown"]
 
+        # Every Task-6 variant gets the same three figure types, so 6a, 6b and
+        # 6c are directly comparable by eye rather than differing in layout.
         p_pairs = plots.maxact_grid(
             ma["inputs"][:n_show], ma["weights"][:n_show],
             f"{title} — max-activating input and encoder weight",
-            os.path.join(out_dir, f"task6_maxact_{key}.png"),
+            os.path.join(V[key], f"task6_{key}_maxact_and_weight.png"),
             unit_labels=[f"u{i}" for i in range(n_show)])
 
         p_inputs = plots.maxact_grid(
             ma["inputs"][:n_show], None,
             f"{title} — max-activating inputs only",
-            os.path.join(out_dir, f"task6_maxact_inputs_{key}.png"))
+            os.path.join(V[key], f"task6_{key}_maxact_inputs.png"))
 
         p_weights = plots.weight_image_grid(
             ma["weights"], f"{title} — encoder weights, all {len(ma['weights'])} units",
-            os.path.join(out_dir, f"task6_weights_{key}.png"))
+            os.path.join(V[key], f"task6_{key}_weight_grid.png"))
+
+        # Distribution of the activations and weights: the per-unit grids show
+        # individuals, these show whether the code is being used fully.
+        plots.activation_histogram(
+            ma["acts"], f"{title} — distribution of max activation per unit",
+            os.path.join(V[key], f"task6_{key}_activation_hist.png"),
+            xlabel="max activation on its best input")
+        plots.activation_histogram(
+            np.asarray(ma["weights"]).ravel(),
+            f"{title} — distribution of encoder weight values",
+            os.path.join(V[key], f"task6_{key}_weight_hist.png"),
+            bins=100, xlabel="weight value")
 
         acts = ma["acts"]
         results["variants"][key] = {
@@ -216,11 +240,13 @@ def run_task6(data, outdir="results", max_epochs=MAX_EPOCHS, device=None,
         plot_keys = keys[:3]
         n_show = results["units_shown"]
         fig, ax = plt_unit_comparison(results["variants"], plot_keys, n_show)
-        p_cmp = save_comparison(fig, ax, os.path.join(out_dir,
-                                                      "task6_comparison.png"))
+        p_cmp = save_comparison(fig, ax, os.path.join(
+            cmp_dir, "task6c_comparison_activation_by_unit.png"))
         results["comparison_figure"] = p_cmp
 
-        # Numeric summary of the same comparison, for the report's prose.
+        # Numeric summary of the same comparison, for the report's prose: this is
+        # what lets the comparison in Task-6c be argued quantitatively rather
+        # than only asserted from looking at the grids.
         summary = {}
         for k in keys:
             a = np.abs(results["variants"][k]["activations"])
@@ -234,6 +260,28 @@ def run_task6(data, outdir="results", max_epochs=MAX_EPOCHS, device=None,
         for k, v in summary.items():
             print(f"    {k:<12} mean={v['mean_abs_activation']:.3f}  "
                   f"max={v['max_abs_activation']:.3f}")
+
+        # Mean and max activation side by side per variant: quantifies the
+        # "which variant responds most strongly" comparison as one bar pair.
+        plots.comparison_bars(
+            {k: summary[k]["mean_abs_activation"] for k in keys},
+            "Task-6c: mean |activation| per bottleneck unit, plain vs denoising",
+            os.path.join(cmp_dir, "task6c_mean_activation_by_variant.png"),
+            ylabel="mean |activation|",
+            labels=[results["variants"][k]["title"] for k in keys])
+        plots.comparison_bars(
+            {k: summary[k]["max_abs_activation"] for k in keys},
+            "Task-6c: max |activation| per bottleneck unit, plain vs denoising",
+            os.path.join(cmp_dir, "task6c_max_activation_by_variant.png"),
+            ylabel="max |activation|",
+            labels=[results["variants"][k]["title"] for k in keys])
+        # How many units respond in each direction, per variant.
+        plots.comparison_bars(
+            {k: results["variants"][k]["n_negative_units"] for k in keys},
+            "Task-6c: units whose strongest response is negative",
+            os.path.join(cmp_dir, "task6c_negative_units_by_variant.png"),
+            ylabel="number of units",
+            labels=[results["variants"][k]["title"] for k in keys])
 
     atomic_write_text(json.dumps(_jsonable(results), indent=2, default=float),
                       os.path.join(outdir, "task6.json"))

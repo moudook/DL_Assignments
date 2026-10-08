@@ -80,7 +80,8 @@ def run_ae_classify(data, kind, task_id, outdir="results",
     archs = archs or list(CLASSIFIER_ARCHS)
     ae_epochs = ae_epochs or max_epochs
     tag = "task3" if task_id == 3 else "task4"
-    out_dir = plots.ensure_dir(os.path.join(outdir, "plots", tag))
+    out_dir = plots.task_dirs(outdir, task_id)["root"]
+    dirs = plots.task_dirs(outdir, task_id)
 
     label = "1-hidden AE" if kind == "1hidden" else "3-hidden AE"
     results = {
@@ -102,12 +103,17 @@ def run_ae_classify(data, kind, task_id, outdir="results",
         print(f"\n{'=' * 60}\nTask-{task_id}: {label} bottleneck k={b}\n{'=' * 60}")
 
         # ── get (or train) the autoencoder, then extract the representation ──
-        if ae_state and b in ae_state:
+        # ae_state keys are "<kind>_<bottleneck>" (how run_all caches Task-2's
+        # trained models), so the lookup must build the same key. Checking
+        # `b in ae_state` against the integer bottleneck never matches, which
+        # silently disabled reuse and retrained every autoencoder.
+        state_key = f"{kind}_{b}"
+        if ae_state and state_key in ae_state and ae_state[state_key] is not None:
             ae = build_autoencoder(kind, b).to(device)
-            ae.load_state_dict(ae_state[b])
+            ae.load_state_dict(ae_state[state_key])
             ae_epochs_run = 0
             recon = None
-            print(f"  reusing supplied autoencoder state (k={b})")
+            print(f"  reusing supplied autoencoder state ({state_key})")
         else:
             ae_run = f"{tag}_ae_{kind}_k{b}"
             tracker = RunTracker(ae_run, outdir, total_epochs=ae_epochs)
@@ -156,6 +162,26 @@ def run_ae_classify(data, kind, task_id, outdir="results",
             print(f"  {arch}: val={100 * res['final_val_acc']:.2f}% "
                   f"({res['epochs_run']} epochs){flag}")
 
+            # Per-run loss + accuracy figure for every (bottleneck, architecture).
+            hist = res["train_loss"]
+            if hist:
+                plots.loss_and_accuracy(
+                    hist,
+                    f"Task-{task_id}: {label} k={b}, {arch} — loss and accuracy",
+                    os.path.join(dirs["training"],
+                                 f"{tag}_k{b}_{arch}_loss_accuracy.png"),
+                    tol=TOL)
+                plots.accuracy_curve(
+                    hist,
+                    f"Task-{task_id}: {label} k={b}, {arch} — accuracy vs epoch",
+                    os.path.join(dirs["accuracy"],
+                                 f"{tag}_k{b}_{arch}_accuracy.png"))
+                plots.loss_curve(
+                    hist,
+                    f"Task-{task_id}: {label} k={b}, {arch} — training loss vs epoch",
+                    os.path.join(dirs["training"],
+                                 f"{tag}_k{b}_{arch}_loss.png"))
+
         # Exclude degenerate (chance-level) architectures from selection: a
         # collapsed net must never be reported as the best model for a
         # representation. See train.flag_degenerate for why the stopping rule
@@ -194,11 +220,51 @@ def run_ae_classify(data, kind, task_id, outdir="results",
         print(f"  best (on val): {best_arch} val={100 * best['val_acc']:.2f}%  "
               f"TEST={100 * test_res['accuracy']:.2f}%")
 
+        # Confusion matrices + per-class breakdown for the SELECTED architecture:
+        # raw counts and row-normalised, since absolute counts and error rate show
+        # different things and both are needed for the report's analysis.
         plots.confusion_matrix(
             test_res["confusion_matrix"],
-            f"Task-{task_id} test confusion matrix — {label} k={b}, {best_arch}\n"
+            f"Task-{task_id}: {label} k={b}, {best_arch} — test confusion matrix\n"
             f"test accuracy {100 * test_res['accuracy']:.2f}%",
-            os.path.join(out_dir, f"{tag}_confusion_k{b}_{best_arch}.png"))
+            os.path.join(dirs["confusion"],
+                         f"{tag}_k{b}_{best_arch}_confusion_test.png"))
+        plots.confusion_matrix(
+            test_res["confusion_matrix"],
+            f"Task-{task_id}: {label} k={b}, {best_arch} — normalised by true class\n"
+            f"test accuracy {100 * test_res['accuracy']:.2f}%",
+            os.path.join(dirs["confusion"],
+                         f"{tag}_k{b}_{best_arch}_confusion_test_norm.png"),
+            normalize=True)
+        plots.per_class_accuracy(
+            test_res["per_class"],
+            f"Task-{task_id}: {label} k={b}, {best_arch} — per-class test accuracy",
+            os.path.join(dirs["accuracy"], f"{tag}_k{b}_{best_arch}_per_class.png"))
+
+        # Confusion matrix for EVERY architecture at this bottleneck, degenerate
+        # ones included: a collapsed model predicts one class for almost
+        # everything, so its matrix IS the evidence for the degeneracy note.
+        for arch, av in entry["architectures"].items():
+            if arch == best_arch:
+                continue
+            am = build_classifier(arch, input_dim=b,
+                                  num_classes=len(CLASS_NAMES)).to(device)
+            am.load_state_dict(av["model_state"])
+            ar = evaluate_classifier(am, red, device=device, split="test")
+            av["test_accuracy_all_archs"] = ar["accuracy"]
+            deg = " (DEGENERATE)" if av.get("degenerate") else ""
+            plots.confusion_matrix(
+                ar["confusion_matrix"],
+                f"Task-{task_id}: {label} k={b}, {arch} — test confusion matrix{deg}\n"
+                f"test accuracy {100 * ar['accuracy']:.2f}%, "
+                f"val {100 * av['val_acc']:.2f}% ({av['epochs_run']} epochs)",
+                os.path.join(dirs["confusion"],
+                             f"{tag}_k{b}_{arch}_confusion_test.png"))
+            plots.per_class_accuracy(
+                ar["per_class"],
+                f"Task-{task_id}: {label} k={b}, {arch} — per-class accuracy{deg}",
+                os.path.join(dirs["accuracy"],
+                             f"{tag}_k{b}_{arch}_per_class.png"))
 
         results["by_bottleneck"][b] = entry
 
@@ -212,7 +278,8 @@ def run_ae_classify(data, kind, task_id, outdir="results",
     print(f"\n  BEST representation by test accuracy: k={results['best_bottleneck']} "
           f"({100 * results['best_test_accuracy']:.2f}%)")
 
-    # Milestone: comparison bars across bottleneck sizes.
+    # ── Task-3c / Task-4c comparison figures ─────────────────────────────────
+    # Accuracy vs bottleneck answers "which representation is best".
     plots.dimension_bars(
         {"test accuracy": [100 * results["by_bottleneck"][b]["test_accuracy"]
                            for b in bottlenecks],
@@ -221,10 +288,41 @@ def run_ae_classify(data, kind, task_id, outdir="results",
              for a in archs) for b in bottlenecks]},
         [str(b) for b in bottlenecks],
         f"Task-{task_id}: {label} representation — accuracy vs bottleneck",
-        os.path.join(out_dir, f"{tag}_accuracy_vs_bottleneck.png"),
+        os.path.join(dirs["comparison"], f"{tag}_accuracy_vs_bottleneck.png"),
         ref=100 * A3_TEST_ACC,
         ref_label="A3 baseline 98.76%")
 
+    # Epochs to convergence, so each representation's cost is visible next to
+    # its accuracy instead of being an invisible cost.
+    plots.dimension_bars(
+        {"epochs": [results["by_bottleneck"][b]["architectures"][
+            results["by_bottleneck"][b]["best_arch"]]["epochs_run"]
+            for b in bottlenecks]},
+        [str(b) for b in bottlenecks],
+        f"Task-{task_id}: epochs to convergence vs bottleneck (best architecture)",
+        os.path.join(dirs["comparison"], f"{tag}_epochs_vs_bottleneck.png"),
+        ylabel="epochs (lower is cheaper)")
+
+    # Architecture x bottleneck heatmaps, the comparison table in figure form.
+    plots.accuracy_heatmap(
+        archs, [str(b) for b in bottlenecks],
+        [[100 * results["by_bottleneck"][b]["architectures"][a]["val_acc"]
+          for b in bottlenecks] for a in archs],
+        f"Task-{task_id}b: validation accuracy by architecture x bottleneck",
+        os.path.join(dirs["comparison"], f"{tag}_heatmap_val.png"),
+        rowlabel="architecture", collabel="bottleneck k")
+    plots.accuracy_heatmap(
+        archs, [str(b) for b in bottlenecks],
+        [[100 * results["by_bottleneck"][b]["architectures"][a].get(
+            "test_accuracy_all_archs", float("nan")) for b in bottlenecks]
+         for a in archs],
+        f"Task-{task_id}b: test accuracy by architecture x bottleneck",
+        os.path.join(dirs["comparison"], f"{tag}_heatmap_test.png"),
+        rowlabel="architecture", collabel="bottleneck k")
+
+    # Superimposed loss curves: per bottleneck across the selected architecture,
+    # and per architecture across bottlenecks. The second form shows whether an
+    # architecture is consistently good or good only at one bottleneck size.
     hist, labels = [], []
     for b in bottlenecks:
         a = results["by_bottleneck"][b]["best_arch"]
@@ -235,7 +333,27 @@ def run_ae_classify(data, kind, task_id, outdir="results",
     plots.superimposed_curves(
         hist, labels,
         f"Task-{task_id}: classifier training loss, best arch per bottleneck",
-        os.path.join(out_dir, f"{tag}_loss_curves.png"))
+        os.path.join(dirs["comparison"], f"{tag}_loss_by_bottleneck.png"))
+
+    for a in archs:
+        hs, ls = [], []
+        for b in bottlenecks:
+            h = results["by_bottleneck"][b]["architectures"][a]["history"]
+            if h:
+                hs.append(h)
+                ls.append(f"k={b}")
+        if len(hs) > 1:
+            plots.superimposed_curves(
+                hs, ls, f"Task-{task_id}: {a} training loss across bottlenecks",
+                os.path.join(dirs["comparison"],
+                             f"{tag}_{a}_loss_across_bottlenecks.png"))
+
+    plots.generalisation_gap(
+        {f"k={b}": 100 * (results["by_bottleneck"][b]["train_accuracy"]
+                          - results["by_bottleneck"][b]["test_accuracy"])
+         for b in bottlenecks},
+        f"Task-{task_id}: train minus test accuracy by bottleneck (generalisation)",
+        os.path.join(dirs["comparison"], f"{tag}_generalisation_gap.png"))
 
     # ── Task-3d / Task-4d: comparisons ────────────────────────────────────
     cmp_ = {"a3_test_acc": A3_TEST_ACC,

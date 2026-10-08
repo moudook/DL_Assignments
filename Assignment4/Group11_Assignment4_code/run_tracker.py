@@ -293,16 +293,16 @@ class RunTracker:
             self.log_fh.close()
 
 
-def thin_history(history, max_points=200):
+def thin_history(history, max_points=60):
     """
     Reduce a per-epoch history to at most max_points entries, always keeping the
     first and last.
 
     Per-epoch histories at 10,000 epochs make the result JSONs large enough to be
-    unreadable (Task-5 hit 350 KB, Task-6 several MB) while adding no
-    information: a convergence curve is fully characterised by its endpoints and
-    its shape, and the UNTHINNED history is preserved in every checkpoint. So
-    thin for JSON, keep full fidelity on disk.
+    unreadable (Task-3 exceeded 750 KB once every architecture's history was
+    recorded), while adding no information: a convergence curve is fully
+    characterised by its endpoints and its shape, and the UNTHINNED history is
+    preserved in every checkpoint. So thin for JSON, keep full fidelity on disk.
     """
     if not history or len(history) <= max_points:
         return history
