@@ -242,7 +242,15 @@ def train_classifier(model, data, arch_name="arch", tracker=None,
             start_epoch = ckpt.get("epoch", 0) + 1
             if tracker.history:
                 tracker.first_epoch_time = ckpt.get("start_time", tracker.first_epoch_time)
-            tracker.log(f"RESUME {arch_name} from epoch {start_epoch}")
+            # Restore the RUN HISTORY, not just the model. A fresh RunTracker
+            # starts with an empty list, so a resumed run would otherwise report
+            # "history": [] and every figure built from it would be empty (and
+            # loss_and_accuracy, which indexes history[0], would crash). The
+            # checkpoint carries the full curve for exactly this reason.
+            if ckpt.get("history"):
+                tracker.history = ckpt["history"]
+            tracker.log(f"RESUME {arch_name} from epoch {start_epoch} "
+                        f"({len(tracker.history)} epochs of history restored)")
 
     # A checkpoint at or past max_epochs means there is nothing left to do. The
     # loop below would not execute, leaving `epoch` unbound - hence this branch.
@@ -437,7 +445,13 @@ def train_autoencoder(model, data, run_name="ae", tracker=None,
             start_epoch = ckpt.get("epoch", 0) + 1
             if tracker.history:
                 tracker.first_epoch_time = ckpt.get("start_time", tracker.first_epoch_time)
-            tracker.log(f"RESUME {run_name} from epoch {start_epoch}")
+            # Restore the run history - see the identical note in
+            # train_classifier. Without it a resumed run reports an empty curve
+            # and the plots built from it are blank or crash.
+            if ckpt.get("history"):
+                tracker.history = ckpt["history"]
+            tracker.log(f"RESUME {run_name} from epoch {start_epoch} "
+                        f"({len(tracker.history)} epochs of history restored)")
 
     # Already trained past the budget: nothing to do. Without this the loop body
     # never runs and `epoch` is left unbound below.

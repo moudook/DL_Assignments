@@ -34,7 +34,7 @@ import torch
 import plots
 from data import CLASS_NAMES, one_per_class
 from evaluate import evaluate_classifier, reconstruction_grid
-from models import build_denoising_autoencoder, build_classifier, count_params
+from models import CLASSIFIER_ARCHS, build_denoising_autoencoder, build_classifier, count_params
 from run_tracker import RunTracker, atomic_write_text, thin_history
 from train import train_autoencoder, train_classifier, encode_all, MAX_EPOCHS, \
     AUTOENCODER_LR, CLASSIFIER_LR, TOL
@@ -80,20 +80,27 @@ def resolve_bottleneck(outdir):
 
 
 def run_task5(data, outdir="results", max_epochs=MAX_EPOCHS, device=None,
-              noise_levels=NOISE_LEVELS, bottleneck=None, task3_arch=None):
+              noise_levels=NOISE_LEVELS, bottleneck=None, task3_arch=None,
+              archs=None):
     """
-    Train denoising AEs at each noise level, then classify their representation
-    with Task-3's winning architecture.
+    Train denoising AEs at each noise level, then classify their representation.
 
     bottleneck: override; None resolves from Task-3's selection.json.
-    task3_arch: override; None resolves from Task-3's selection.json. A4 Task-5d
-                requires "the same best architecture you have considered in
-                Task-3".
+    task3_arch: override; None resolves from Task-3's selection.json. This is the
+                architecture A4's Task-5d note names, and it is recorded
+                separately from whichever architecture wins on validation.
+    archs:      full classifier architecture set to report for Task-5d-ii
+                ("the different architectures"); defaults to all four.
+
+    Two readings of A4's Task-5d coexist - the note names one architecture,
+    5d-ii asks for the different architectures. All four are trained (seconds
+    each) so both readings are answered, with Task-3's recorded explicitly.
     """
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     out_dir = plots.task_dirs(outdir, 5)["root"]
     dirs = plots.task_dirs(outdir, 5)
+    archs = archs or list(CLASSIFIER_ARCHS)
 
     if bottleneck is None:
         bottleneck, sel_arch = resolve_bottleneck(outdir)
@@ -121,6 +128,8 @@ def run_task5(data, outdir="results", max_epochs=MAX_EPOCHS, device=None,
         "tolerance": TOL,
         "max_epochs": max_epochs,
         "by_noise": {},
+        # architecture x noise-level grid, for the Task-5d-ii comparison.
+        "by_arch": {},
     }
 
     for noise in noise_levels:
@@ -182,43 +191,101 @@ def run_task5(data, outdir="results", max_epochs=MAX_EPOCHS, device=None,
                 os.path.join(dirs["recon"],
                              f"task5_dae_{tag}_triptych_{split}.png"))
 
-        # Task-5d: classify the representation with Task-3's best architecture.
+        # Task-5d. Two readings of A4's Task-5d coexist, so both are satisfied:
+        #   - the note "use the same best architecture as Task-3" names ONE
+        #     architecture, which is recorded as task3_best_arch;
+        #   - 5d-ii says "for the different architectures of FCNN classification
+        #     model", which asks for validation AND test accuracy across the
+        #     architecture set used in Tasks 1/3/4.
+        # Running all four costs seconds and covers both readings, so the report
+        # never has to guess which was meant.
         red = encode_all(trained, data)
-        run_id_c = f"task5_clf_{tag}_k{bottleneck}_{task3_arch}"
-        tracker_c = RunTracker(run_id_c, outdir, total_epochs=max_epochs)
-        clf = build_classifier(task3_arch, input_dim=bottleneck,
-                               num_classes=len(CLASS_NAMES)).to(device)
-        cres = train_classifier(clf, red, f"task5_{tag}", tracker=tracker_c,
-                                max_epochs=max_epochs, device=device)
+        clf_archs = {}
 
-        clf_trained = build_classifier(task3_arch, input_dim=bottleneck,
-                                       num_classes=len(CLASS_NAMES)).to(device)
-        clf_trained.load_state_dict(cres["model_state"])
-        test_res = evaluate_classifier(clf_trained, red, device=device,
-                                       split="test")
-        train_clf_res = evaluate_classifier(clf_trained, red, device=device,
-                                            split="train")
+        for arch in archs:
+            run_arch = f"task5_clf_{tag}_k{bottleneck}_{arch}"
+            tracker_c = RunTracker(run_arch, outdir, total_epochs=max_epochs)
+            clf = build_classifier(arch, input_dim=bottleneck,
+                                   num_classes=len(CLASS_NAMES)).to(device)
+            cres = train_classifier(clf, red, f"task5_{tag}_{arch}",
+                                    tracker=tracker_c, max_epochs=max_epochs,
+                                    device=device)
+            clf_trained = build_classifier(
+                arch, input_dim=bottleneck, num_classes=len(CLASS_NAMES)
+            ).to(device)
+            clf_trained.load_state_dict(cres["model_state"])
 
-        print(f"  classifier ({task3_arch}): val={100 * cres['final_val_acc']:.2f}%  "
-              f"TEST={100 * test_res['accuracy']:.2f}%")
+            test_r = evaluate_classifier(clf_trained, red, device=device,
+                                         split="test")
+            train_r = evaluate_classifier(clf_trained, red, device=device,
+                                         split="train")
+            clf_archs[arch] = {
+                "val_acc": cres["final_val_acc"],
+                "test_acc": test_r["accuracy"],
+                "train_acc": train_r["accuracy"],
+                "epochs_run": cres["epochs_run"],
+                "degenerate": cres.get("degenerate", False),
+                "terminal_state": cres.get("terminal_state"),
+                "hidden_sizes": CLASSIFIER_ARCHS[arch],
+                "confusion_matrix": test_r["confusion_matrix"],
+                "per_class": test_r["per_class"],
+                # Underscore-prefixed so _jsonable drops it from the JSON;
+                # consumed directly by the comparison figures below.
+                "_history": cres["train_loss"],
+            }
+            flag = "  <-- DEGENERATE" if cres.get("degenerate") else ""
+            print(f"  {arch}: val={100 * cres['final_val_acc']:.2f}%  "
+                  f"TEST={100 * test_r['accuracy']:.2f}%{flag}")
 
-        # Confusion matrices (raw + normalised) and per-class breakdown.
+        # Select on VALIDATION accuracy, excluding degenerate runs. A collapsed
+        # classifier must never be reported as Task-5's best.
+        collapsed = [a for a, v in clf_archs.items() if v.get("degenerate")]
+        survivors = {a: v for a, v in clf_archs.items() if a not in collapsed}
+        if not survivors:
+            survivors = clf_archs
+        best_arch = max(survivors.items(),
+                        key=lambda kv: (kv[1]["val_acc"], -kv[1]["epochs_run"]))[0]
+        best = clf_archs[best_arch]
+
+        print(f"  best (on val): {best_arch} val={100 * best['val_acc']:.2f}%  "
+              f"TEST={100 * best['test_acc']:.2f}%   "
+              f"[Task-3's architecture: {task3_arch}, "
+              f"val={100 * clf_archs[task3_arch]['val_acc']:.2f}%]")
+
+        # Figures for the SELECTED architecture: confusion matrices (raw +
+        # normalised) and per-class breakdown.
         plots.confusion_matrix(
-            test_res["confusion_matrix"],
-            f"Task-5: denoising AE {tag}% noise, k={bottleneck} — test "
-            f"confusion matrix\ntest accuracy {100 * test_res['accuracy']:.2f}%",
+            best["confusion_matrix"],
+            f"Task-5: denoising AE {tag}% noise, k={bottleneck}, {best_arch} "
+            f"— test confusion matrix\ntest accuracy {100 * best['test_acc']:.2f}%",
             os.path.join(dirs["confusion"], f"task5_confusion_{tag}_test.png"))
         plots.confusion_matrix(
-            test_res["confusion_matrix"],
-            f"Task-5: denoising AE {tag}% noise, k={bottleneck} — normalised "
-            f"by true class\ntest accuracy {100 * test_res['accuracy']:.2f}%",
+            best["confusion_matrix"],
+            f"Task-5: denoising AE {tag}% noise, k={bottleneck}, {best_arch} "
+            f"— normalised by true class\ntest accuracy "
+            f"{100 * best['test_acc']:.2f}%",
             os.path.join(dirs["confusion"], f"task5_confusion_{tag}_test_norm.png"),
             normalize=True)
         plots.per_class_accuracy(
-            test_res["per_class"],
-            f"Task-5: denoising AE {tag}% noise, k={bottleneck} — per-class "
-            f"test accuracy",
+            best["per_class"],
+            f"Task-5: denoising AE {tag}% noise, k={bottleneck}, {best_arch} "
+            f"— per-class test accuracy",
             os.path.join(dirs["accuracy"], f"task5_per_class_{tag}.png"))
+
+        # A confusion matrix for every other architecture too, so the "different
+        # architectures" comparison in Task-5d-ii is backed by a figure per arch.
+        for arch, av in clf_archs.items():
+            if arch == best_arch:
+                continue
+            deg = " (DEGENERATE)" if av.get("degenerate") else ""
+            plots.confusion_matrix(
+                av["confusion_matrix"],
+                f"Task-5: denoising AE {tag}% noise, k={bottleneck}, {arch} "
+                f"— test confusion matrix{deg}\ntest accuracy "
+                f"{100 * av['test_acc']:.2f}%, val "
+                f"{100 * av['val_acc']:.2f}%",
+                os.path.join(dirs["confusion"],
+                             f"task5_confusion_{tag}_{arch}.png"))
 
         # Autoencoder training curve + classifier training/accuracy curves.
         plots.loss_curve(
@@ -226,19 +293,23 @@ def run_task5(data, outdir="results", max_epochs=MAX_EPOCHS, device=None,
             f"Task-5: denoising AE {tag}% noise — reconstruction MSE vs epoch",
             os.path.join(dirs["training"], f"task5_dae_{tag}_loss.png"),
             ylabel="reconstruction MSE (train)")
-        plots.loss_and_accuracy(
-            cres["train_loss"],
-            f"Task-5: {tag}% noise — classifier loss and accuracy vs epoch",
-            os.path.join(dirs["training"], f"task5_clf_{tag}_loss_accuracy.png"),
-            tol=TOL)
-        plots.accuracy_curve(
-            cres["train_loss"],
-            f"Task-5: {tag}% noise — classifier accuracy vs epoch",
-            os.path.join(dirs["accuracy"], f"task5_clf_{tag}_accuracy.png"))
+        # Loss/accuracy curve for every architecture at this noise level.
+        for arch, av in clf_archs.items():
+            plots.loss_and_accuracy(
+                av.get("history", []),
+                f"Task-5: {tag}% noise, {arch} — classifier loss and accuracy",
+                os.path.join(dirs["training"],
+                             f"task5_clf_{tag}_{arch}_loss_accuracy.png"),
+                tol=TOL)
         plots.recon_error_bars(
             {"reconstruction error": recon},
             f"Task-5: denoising AE {tag}% noise — reconstruction error per split",
             os.path.join(dirs["recon_error"], f"task5_{tag}_recon_error.png"))
+
+        # Heatmap of architecture x noise level for the Task-5d comparison.
+        results["by_arch"].setdefault(tag, {})
+        for arch, av in clf_archs.items():
+            results["by_arch"][tag][arch] = av
 
         results["by_noise"][tag] = {
             "noise": noise,
@@ -253,19 +324,25 @@ def run_task5(data, outdir="results", max_epochs=MAX_EPOCHS, device=None,
             "stopped_early": res["stopped_early"],
             "history": res["history"],
             "grids": grids,
-            # Weights stay out of the JSON. The classifier checkpoint already
-            # persists them (checkpoint ~50 KB), and inlining them here bloated
-            # task5.json to ~350 KB for no analytical value.
-            "classifier_model_recoverable_from": "checkpoint",
+            # The architecture A4's note directs us to use for this noise level,
+            # recorded separately from whichever architecture won on validation
+            # so the report can state both.
+            "task3_best_arch": task3_arch,
+            "task3_best_arch_val_acc": clf_archs[task3_arch]["val_acc"],
+            "task3_best_arch_test_acc": clf_archs[task3_arch]["test_acc"],
+            "classifier_archs": clf_archs,
+            "best_arch": best_arch,
             "classifier": {
-                "arch": task3_arch,
-                "val_acc": cres["final_val_acc"],
-                "train_acc": train_clf_res["accuracy"],
-                "test_acc": test_res["accuracy"],
-                "epochs_run": cres["epochs_run"],
-                "confusion_matrix": test_res["confusion_matrix"],
-                "per_class": test_res["per_class"],
-                "history": cres["train_loss"],
+                "arch": best_arch,
+                "val_acc": best["val_acc"],
+                "train_acc": best["train_acc"],
+                "test_acc": best["test_acc"],
+                "epochs_run": best["epochs_run"],
+                "confusion_matrix": best["confusion_matrix"],
+                "per_class": best["per_class"],
+                # Prefixed with _ so _jsonable keeps it out of the JSON; the
+                # figures above consume it directly instead.
+                "_history": best["_history"],
             },
         }
 
@@ -320,7 +397,7 @@ def run_task5(data, outdir="results", max_epochs=MAX_EPOCHS, device=None,
         os.path.join(dirs["comparison"], "task5_loss_curves_by_noise.png"))
     for name, e in results["by_noise"].items():
         plots.loss_and_accuracy(
-            e["classifier"]["history"],
+            e["classifier"].get("_history", []),
             f"Task-5: {name} noise — classifier loss and accuracy vs epoch",
             os.path.join(dirs["comparison"],
                          f"task5_clf_{name}_loss_accuracy.png"), tol=TOL)
@@ -345,6 +422,7 @@ def run_task5(data, outdir="results", max_epochs=MAX_EPOCHS, device=None,
     sel["5"] = {"best_noise": results["best_noise"],
                 "bottleneck": bottleneck,
                 "classifier_arch": task3_arch,
+                "best_arch": results.get("best_arch"),
                 "best_test_accuracy": results["best_test_accuracy"]}
     atomic_write_text(json.dumps(_jsonable(sel), indent=2, default=float), path)
 

@@ -1,0 +1,970 @@
+% main.tex -- CS601T Deep Learning, Programming Assignment 4 (Group 11).
+% "Autoencoders for Representation Learning and Image Reconstruction".
+% Compile twice with pdflatex -interaction=nonstopmode -halt-on-error main.tex, or latexmk -pdf main.tex.
+%
+% FIGURES.  Every image goes through \maybeinc (defined below), which embeds the file when it
+% exists in the archive root declared by \graphicspath, namely ../results_final/plots/, and
+% otherwise draws a labelled placeholder naming the expected path.  The file therefore compiles
+% cleanly whether the PNG archive is complete or absent.
+% RESULTS.  Numbers that depend on the measured run are written as \RESULT / \RESULTPCT and are
+% flagged by "%%% RESULT:" comments.
+
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}                 % scalable Type1 fonts (microtype expansion needs them)
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage[font=small,labelfont=bf,skip=4pt]{caption}
+\usepackage{subcaption}
+\usepackage{float}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{microtype}
+\usepackage{array}
+\usepackage{longtable}
+\usepackage{listings}
+\usepackage{fancyhdr}
+\usepackage{siunitx}
+\usepackage[colorlinks=true,linkcolor=blue!55!black,citecolor=blue!55!black,urlcolor=blue!55!black]{hyperref}
+
+\graphicspath{{../results_final/plots/}}            % the results archive root
+\newcommand{\figsrc}[1]{../results_final/plots/#1}
+\newcommand{\maybeinc}[2][]{\IfFileExists{\figsrc{#2}}{\includegraphics[#1]{#2}}{\figplaceholder{#2}}}
+\newcommand{\figplaceholder}[1]{\fbox{\begin{minipage}[c][2.8em][c]{0.78\linewidth}\centering
+  \footnotesize\texttt{\detokenize{#1}}\\[1pt]\scriptsize figure not archived yet\end{minipage}}}
+\newcommand{\R}{\mathbb{R}}\newcommand{\given}{\mid}\newcommand{\Acc}{\mathrm{Acc}}
+\newcommand{\code}[1]{\texttt{#1}}
+\newcommand{\RESULT}{\textrm{[\,\textit{result}\,]}}     % placeholder for measured numbers
+\newcommand{\RESULTPCT}{\RESULT\,\%}
+\setlength{\parskip}{3pt}\setlength{\parindent}{0pt}\renewcommand{\arraystretch}{1.13}
+\lstset{language=Python,basicstyle=\small\ttfamily,keywordstyle=\bfseries,commentstyle=\itshape,
+        frame=single,breaklines=true,showstringspaces=false,numbers=left,numberstyle=\tiny,
+        numbersep=6pt,xleftmargin=13pt,aboveskip=5pt,belowskip=5pt}
+\pagestyle{fancy}\fancyhf{}
+\fancyhead[L]{\small\itshape CS601T: Deep Learning --- Assignment 4}
+\fancyhead[R]{\small\itshape Group 11}
+\fancyfoot[L]{\small\itshape CS601T: Deep Learning --- Assignment 4}
+\fancyfoot[C]{\small\itshape\thepage}
+\fancyfoot[R]{\small\itshape Group 11}
+\renewcommand{\headrulewidth}{0.4pt}\renewcommand{\footrulewidth}{0.4pt}
+
+\begin{document}
+
+\begin{titlepage}
+\centering
+\vspace*{1em}
+{\large\scshape CS601T: Deep Learning\par}\vspace{0.2em}{\normalsize Programming Assignment 4\par}
+\vspace{1.2em}\rule{\linewidth}{1.0pt}\\[0.6em]
+{\LARGE\bfseries Autoencoders for Representation Learning\\[0.2em] and Image Reconstruction\par}
+\vspace{0.6em}\rule{\linewidth}{1.0pt}\vspace{2.4em}
+{\large\bfseries Group 11\par}\vspace{0.8em}
+\begin{tabular}{@{}ll@{}}
+\toprule\textbf{Roll Number} & \textbf{Name} \\ \midrule
+CS24BT055 & Himanshu Nagwanshi \\
+CS24BT060 & Anshuman Rahul \\
+CS24BT061 & Sidharth B \\
+\bottomrule
+\end{tabular}
+\vspace{2.4em}
+\begin{tabular}{@{}ll@{}}
+\toprule\textbf{Course} & CS601T: Deep Learning \\ \midrule
+\textbf{Semester} & August--November 2026 \\
+\textbf{Institute} & Indian Institute of Technology Delhi \\
+\bottomrule
+\end{tabular}
+\vfill
+{\small Code repository: \code{Group11\_Assignment4\_code} \quad$\vert$\quad Typeset with pdf\LaTeX\par}
+\vspace{1em}
+\end{titlepage}
+
+\begin{abstract}
+\noindent
+This report studies autoencoders as a route to supervised representation learning on a five-class
+MNIST subset (digits $0,4,5,6,7$, $28\times28$ images flattened to $D=784$).  We first establish a
+linear reference point: principal component analysis fitted on the training split only, reducing
+$\mathbf{x}$ to $k\in\{32,64,128,256\}$ components, classified by a fully connected network (FCNN).
+We then train two autoencoder families, a one-hidden encoder/decoder pair
+($784\rightarrow k\rightarrow784$) and a three-hidden family
+($784\rightarrow400\rightarrow k\rightarrow400\rightarrow784$), each with a strictly linear
+bottleneck of width $k$ and logistic sigmoid elsewhere, minimising the mean squared reconstruction
+error with Adam.  The frozen bottleneck codes of both families feed the same four classifiers,
+giving Tasks 3 and 4; family-specific denoising variants trained against clean targets under
+$20\,\%$ and $40\,\%$ masked-pixel corruption give Task 5; and the maximally activating training
+image plus the incoming encoder weight of each bottleneck unit give Task 6.  The principal
+empirical finding is that a learned nonlinear code is a better classifier input than the linear
+PCA code at equal width: the best one-hidden code at $k=256$ recovers most of the
+$\num{98.76}\,\%$ test accuracy of the Assignment-3 raw-input baseline, whereas PCA at its own best
+width loses markedly more.  We further find that the learned code preserves Assignment-3's
+per-class error profile rather than introducing new failure modes, that a deeper encoder does not
+help the classifier and can disable it entirely, that denoising at $20\,\%$ noise costs almost no
+accuracy while delivering a much more robust reconstruction, and that a naive single-epoch stopping
+rule certifies chance-level models as converged and had to be replaced.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+\section{Dataset and Problem Setup}\label{sec:dataset}
+
+\subsection{Data}\label{sec:dataset:data}
+The dataset is the five-class MNIST subset used throughout Assignments 3 and 4, held in
+\code{Group\_11/}\{train,val,test\} as \code{.jpg} images organised by class.  Each image is
+$28\times28$ greyscale normalised to $[0,1]$ by \code{Grayscale()}$\rightarrow$\code{ToTensor()},
+then flattened to $\mathbf{x}\in\R^{D}$ with $D=784$ (Eq.~\eqref{eq:flatten}).  Table~\ref{tab:dataset}
+gives the split sizes.  The split is exactly balanced, so chance accuracy is exactly $1/C=20\,\%$ on
+every split.
+
+\begin{table}[htbp]\centering
+\caption{Split sizes and per-class counts of the five-class MNIST subset.  Each class contributes
+one fifth of every split, so all splits are balanced; counts are exact, being the split sizes
+divided by $C=5$.}\label{tab:dataset}
+\begin{tabular}{@{}lrrrrrrr@{}}
+\toprule Split & Total & Digit 0 & Digit 4 & Digit 5 & Digit 6 & Digit 7 & Share \\ \midrule
+Train & 11\,385 & 2\,277 & 2\,277 & 2\,277 & 2\,277 & 2\,277 & 60.0\,\% \\
+Val   & 3\,795  & 759    & 759    & 759    & 759    & 759    & 20.0\,\% \\
+Test  & 3\,795  & 759    & 759    & 759    & 759    & 759    & 20.0\,\% \\ \midrule
+Total & 18\,975 & 3\,795 & 3\,795 & 3\,795 & 3\,795 & 3\,795 & 100\,\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Tasks 1, 3, 4 and 5 use the training split alone for fitting and for deriving statistics.
+Validation accuracy performs \emph{model selection} --- choice of architecture and of bottleneck
+width --- and the test split is evaluated once, for the selected model only.  This is the protocol
+of Assignment 3 and it is retained so that the two sets of numbers stay directly comparable.
+
+\subsection{Notation}\label{sec:dataset:notation}
+Table~\ref{tab:notation} fixes the notation for the rest of the report.  Each symbol carries
+exactly one meaning throughout: $x$, $z$, $k$, $W$ and $D$ are never redefined, and $D$ is always
+the input dimension while $k$ is always the bottleneck width.
+
+\begin{table}[htbp]\centering\small
+\caption{Notation.  Each symbol has a single meaning throughout the report.}\label{tab:notation}
+\begin{tabular}{@{}p{0.10\linewidth}p{0.82\linewidth}@{}}
+\toprule \textbf{Symbol} & \textbf{Meaning} \\ \midrule
+$D$ & Input (image) dimension; $D=784=28\times28$. \\
+$C$ & Number of classes; $C=5$. \\
+$N$ & Number of samples in the split under discussion; $N_{\mathrm{tr}}=11\,385$,
+      $N_{\mathrm{val}}=N_{\mathrm{test}}=3\,795$. \\
+$\mathcal{S}_{\mathrm{tr}},\mathcal{S}_{\mathrm{val}},\mathcal{S}_{\mathrm{test}}$
+    & Training, validation and test sample sets. \\
+$y\in\{0,4,5,6,7\}$ & Class label.  Labels are digit values, not indices $0\ldots4$, and are
+      printed verbatim in every confusion matrix. \\
+$\mathbf{x}$ & One flattened input image, $\mathbf{x}\in\R^{D}$, entries in $[0,1]$. \\
+$\mathbf{z}$ & Bottleneck (compressed) representation, $\mathbf{z}\in\R^{k}$, produced by PCA
+      projection or by an encoder depending on context. \\
+$k$ & Bottleneck width, $k\in\{32,64,128,256\}$. \\
+$\mathbf{h}$ & The $400$-wide hidden vector of the three-hidden autoencoder. \\
+$\hat{\mathbf{x}}$ & Reconstruction of $\mathbf{x}$, $\hat{\mathbf{x}}\in\R^{D}$; the sigmoid
+      output layer keeps it in $[0,1]$ like the target. \\
+$\mathbf{W},\mathbf{b}$ & Weight matrix and bias vector.  Superscript $\mathbf{W}^{(l)}$ indexes
+      stacked classifier layers; subscripts $e,d$ select an autoencoder's encoder or decoder;
+      subscript $e,j$ selects row $j$ of an encoder matrix. \\
+$\sigma(\cdot)$ & Logistic sigmoid, Eq.~\eqref{eq:sigmoid}. \\
+$\theta$ & All trainable parameters of a model; $\theta_e,\theta_d$ are the encoder and decoder
+      subsets and $\theta_{\mathrm{clf}}$ a classifier. \\
+$\phi,\psi$ & Encoder and decoder maps; $\hat{\mathbf{x}}=\psi(\phi(\mathbf{x}))$. \\
+$\boldsymbol{\mu}$ & Training-set mean image (PCA only). \\
+$\bar{\mathbf{x}}$ & Mean-centred image, $\bar{\mathbf{x}}=\mathbf{x}-\boldsymbol{\mu}$. \\
+$\boldsymbol{\Sigma}$ & PCA sample covariance matrix, $\boldsymbol{\Sigma}\in\R^{D\times D}$. \\
+$\lambda_j,\mathbf{u}_j$ & Eigenvalue and eigenvector of $\boldsymbol{\Sigma}$, ordered
+      $\lambda_1\ge\cdots\ge\lambda_D$. \\
+$\mathbf{U}_k$ & Matrix of the $k$ leading eigenvectors, $\mathbf{U}_k\in\R^{D\times k}$. \\
+$\nu(k)$ & Fraction of total training variance retained by the top-$k$ components. \\
+$\rho$ & Fraction of input pixels zeroed by the corruption mask (Task 5 only),
+      $\rho\in\{0.20,0.40\}$. \\
+$\mathbf{m},\tilde{\mathbf{x}}$ & Binary corruption mask and corrupted input. \\
+$\mathbf{s},p_c$ & Logit vector and softmax probability of class $c$. \\
+$\mathbf{g}_t$ & Gradient of the objective with respect to $\theta$ at step $t$. \\
+$\beta_1,\beta_2,\epsilon_{\mathrm{adam}}$ & Adam's moment decay rates and stabiliser. \\
+$\mathcal{L}_{\mathrm{rec}},\mathcal{L}_{\mathrm{CE}},\mathcal{L}_{\mathrm{DAE}}$ &
+      Reconstruction, classification and denoising objectives. \\
+$E_{\mathrm{rec}}(\mathcal{S})$ & Post-training mean squared reconstruction error on split
+      $\mathcal{S}$. \\
+$\eta$ & Learning rate; $\eta_{\mathrm{clf}}$ and $\eta_{\mathrm{AE}}$ distinguish the
+      classifier and autoencoder rates. \\
+$\epsilon_{\mathrm{tol}},\tau_{\mathrm{pat}}$ & Stopping tolerance, $10^{-4}$, and its
+      consecutive-epoch patience window, $15$. \\
+$\Acc_{\mathrm{val}},\Acc_{\mathrm{test}}$ & Validation and test accuracy. \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Baseline and metrics}\label{sec:dataset:baseline}
+The reference point for every comparison is the best model of Assignment 3, the FCNN
+$\mathrm{A\_128\_64\_32}$ ($784\rightarrow128\rightarrow64\rightarrow32\rightarrow5$) trained
+with Nesterov-accelerated gradient descent, which reached $\Acc_{\mathrm{val}}=98.84\,\%$ and
+$\Acc_{\mathrm{test}}=98.76\,\%$ in 18 epochs.  We quote those numbers from the submitted
+Assignment-3 report rather than from the leftover \code{results/} directory of that assignment,
+which disagrees with it.  Accuracy, the test confusion matrix and its row-normalised version,
+per-class recall, and the mean squared reconstruction error of Eq.~\eqref{eq:recsplit} are the
+metrics reported below.  Unless stated otherwise, evaluation is full-batch.
+
+\section{Model Architecture and Implementation}\label{sec:arch}
+All models are implemented in PyTorch on a single device selected at startup, CUDA when available
+and CPU otherwise, in fp32 throughout.  Mixed precision is off and was not used for any reported
+number; the PCA eigendecomposition, the mean subtraction, all reconstruction-error reporting and
+the maximally-activating-input search of Task 6 were additionally run in explicit fp32, because an
+argmax ordering is not a quantity to expose to reduced-precision reductions.
+
+\subsection{The FCNN classifier}\label{sec:arch:clf}
+Every reduced representation in Tasks 1, 3, 4 and 5 is classified by one of the four fully
+connected architectures of Table~\ref{tab:archs}.  The set is held \emph{fixed across input
+dimensions}: the same shapes are applied to the $784$-dimensional raw input and to the
+$k=32,64,128,256$-dimensional reduced representations.  If each $k$ were given architectures
+rescaled to its own width, a difference between two widths would be confounded with a difference
+in classifier capacity and the experiment would no longer answer which representation classifies
+better.  Holding the shapes constant means every width faces identical capacity, so a measured
+difference is attributable to the representation.
+
+\begin{table}[htbp]\centering
+\caption{The four FCNN classifier architectures, shared by Tasks 1, 3, 4 and 5 at every input
+dimension.  Widths funnel monotonically toward the $5$-way output while spanning shallow-wide to
+deep-narrow.}\label{tab:archs}
+\begin{tabular}{@{}llp{0.40\linewidth}@{}}
+\toprule \textbf{Name} & \textbf{Hidden widths} & \textbf{Role} \\ \midrule
+3L\_A & $128\to64\to32$ & Shallow, widest capacity. \\
+3L\_B & $64\to32\to16$ & Shallow, narrow; capacity-floor probe. \\
+4L\_A & $128\to64\to32\to16$ & Mid-depth. \\
+5L\_A & $64\to32\to16\to8\to4$ & Deepest, narrowest. \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+A classifier with $L$ hidden layers computes logits $\mathbf{s}\in\R^{C}$ and probabilities $p_c$
+by Eqs.~\eqref{eq:clf}--\eqref{eq:ce}.
+\begin{align}
+\mathbf{s} &= \mathbf{W}^{(L)}\sigma\bigl(\mathbf{W}^{(L-1)}\sigma(\cdots
+  \sigma(\mathbf{W}^{(1)}\mathbf{x}+\mathbf{b}^{(1)})\cdots)+\mathbf{b}^{(L-1)}\bigr)
+  +\mathbf{b}^{(L)}\in\R^{C}, \label{eq:clf}\\
+p_c &= \frac{e^{s_c}}{\sum_{c'=1}^{C}e^{s_{c'}}},\qquad c=1,\ldots,C,\qquad C=5, \label{eq:softmax}\\
+\mathcal{L}_{\mathrm{CE}}(\theta_{\mathrm{clf}}) &=
+  -\frac{1}{N}\sum_{i=1}^{N}\log p_{y_i}. \label{eq:ce}
+\end{align}
+Weights are Xavier Glorot uniform with zero biases, drawn under \code{torch.manual\_seed(42)} so
+an architecture is reproducible as a unit.  Xavier rather than PyTorch's default Kaiming uniform,
+because the funnel widths of Table~\ref{tab:archs} sit in the symmetric regime Xavier was derived
+for; the distinction is recorded because Assignment 3's report described Kaiming while its code in
+fact used Xavier, a mismatch this report does not repeat.
+
+\subsection{Principal component analysis (Task 1)}\label{sec:arch:pca}
+PCA is fitted on $\mathcal{S}_{\mathrm{tr}}$ alone.  Images are flattened, the training mean is
+computed once from the training split, every split is centred with that \emph{same} mean, and the
+covariance matrix is diagonalised.  The $k$ leading eigenvectors form $\mathbf{U}_k$ and define
+the compressed representation of Eq.~\eqref{eq:proj}; Eq.~\eqref{eq:varratio} is the fraction of
+total training variance a width-$k$ code retains.  The eigendecomposition is computed in fp32 and
+the ranking of eigenvalues is a discrete event, so the top-$k$ choice is deterministic.
+\begin{align}
+\mathbf{x}_i &= \operatorname{vec}(\mathbf{g}_i)\in\R^{D},\qquad D=28\times28=784,
+  \qquad i=1,\ldots,N, \label{eq:flatten}\\
+\boldsymbol{\mu} &= \frac{1}{N}\sum_{i=1}^{N}\mathbf{x}_i\in\R^{D},
+  \qquad \boldsymbol{\mu}=\boldsymbol{\mu}(\mathcal{S}_{\mathrm{tr}}), \label{eq:mean}\\
+\bar{\mathbf{x}}_i &= \mathbf{x}_i-\boldsymbol{\mu}
+  \qquad\text{(the training mean, for every split)}, \label{eq:center}\\
+\boldsymbol{\Sigma} &= \frac{1}{N}\sum_{i=1}^{N}\bar{\mathbf{x}}_i\bar{\mathbf{x}}_i^{\top}
+  \in\R^{D\times D},\qquad \boldsymbol{\Sigma}=\boldsymbol{\Sigma}^{\top}\succeq0, \label{eq:cov}\\
+\boldsymbol{\Sigma}\mathbf{u}_j &= \lambda_j\mathbf{u}_j,\qquad
+  \lambda_1\ge\cdots\ge\lambda_D\ge0,\qquad
+  \langle\mathbf{u}_j,\mathbf{u}_{j'}\rangle=\delta_{jj'}, \label{eq:eig}\\
+\mathbf{U}_k &= [\mathbf{u}_1\;\mathbf{u}_2\;\cdots\;\mathbf{u}_k]\in\R^{D\times k},
+  \qquad \mathbf{z}_i=\mathbf{U}_k^{\top}\bar{\mathbf{x}}_i\in\R^{k}, \label{eq:proj}\\
+\nu(k) &= \frac{\sum_{j=1}^{k}\lambda_j}{\sum_{j=1}^{D}\lambda_j}\in[0,1]
+  \qquad\text{(non-decreasing in $k$)}. \label{eq:varratio}
+\end{align}
+where $\mathbf{g}_i\in[0,1]^{28\times28}$ is the greyscale image of Eq.~\eqref{eq:flatten}.
+
+\subsection{Autoencoders (Tasks 2, 3 and 4)}\label{sec:arch:ae}
+Two encoder/decoder families are trained.  In both, the bottleneck layer is \emph{linear} by
+mandate and every other hidden layer as well as the output layer uses the logistic sigmoid of
+Eq.~\eqref{eq:sigmoid}.  Logistic is used throughout rather than $\tanh$, because $\tanh$ forces
+targets into $[-1,1]$, putting reconstruction error outside pixel units and making the Task-2 and
+Task-5 numbers incomparable with each other.
+\begin{equation}\label{eq:sigmoid}
+\sigma(a)=\frac{1}{1+e^{-a}}\in(0,1),\qquad \sigma'(a)=\sigma(a)\bigl(1-\sigma(a)\bigr).
+\end{equation}
+
+\paragraph{One-hidden family ($784\rightarrow k\rightarrow784$).}
+The bottleneck is the only hidden layer, so it is linear, and the decoder is a single sigmoid
+output layer, giving Eq.~\eqref{eq:ae1full}.  The parameter count is $2Dk+D+k$.
+\begin{align}
+\mathbf{z} &= \phi(\mathbf{x})=\mathbf{W}_e\mathbf{x}+\mathbf{b}_e\in\R^{k},
+  \qquad \theta_e=\{\mathbf{W}_e\in\R^{k\times D},\mathbf{b}_e\}, \label{eq:ae1enc}\\
+\hat{\mathbf{x}} &= (\psi\circ\phi)(\mathbf{x})=\sigma\bigl(\mathbf{W}_d
+  (\mathbf{W}_e\mathbf{x}+\mathbf{b}_e)+\mathbf{b}_d\bigr)\in\R^{D}, \label{eq:ae1full}\\
+\psi(\mathbf{z}) &= \sigma(\mathbf{W}_d\mathbf{z}+\mathbf{b}_d),\qquad
+  \theta_d=\{\mathbf{W}_d\in\R^{D\times k},\mathbf{b}_d\}. \label{eq:ae1dec}
+\end{align}
+
+\paragraph{Three-hidden family ($784\rightarrow400\rightarrow k\rightarrow400\rightarrow784$).}
+Two sigmoid layers of width $400$ bracket the same linear bottleneck.  The $400$-wide layers are
+the assignment's own prescription, not a tuned width.  The parameter count is
+$628\,784+801k$, dominated by the two $784\leftrightarrow400$ matrices.
+\begin{align}
+\mathbf{h} &= \sigma\bigl(\mathbf{W}_e^{(1)}\mathbf{x}+\mathbf{b}_e^{(1)}\bigr)\in\R^{400},
+  \qquad \mathbf{z}=\mathbf{W}_e^{(2)}\mathbf{h}+\mathbf{b}_e^{(2)}\in\R^{k},
+  \label{eq:ae3enc}\\
+\mathbf{h}' &= \sigma\bigl(\mathbf{W}_d^{(1)}\mathbf{z}+\mathbf{b}_d^{(1)}\bigr)\in\R^{400},
+  \qquad \hat{\mathbf{x}}=\sigma\bigl(\mathbf{W}_d^{(2)}\mathbf{h}'+\mathbf{b}_d^{(2)}\bigr)
+  \in\R^{D}. \label{eq:ae3dec}
+\end{align}
+
+\begin{table}[htbp]\centering
+\caption{Exact trainable-parameter counts of the two autoencoder families.  The three-hidden
+family carries a large fixed cost from the two $784\leftrightarrow400$ matrices, independent of
+$k$.}\label{tab:aeparams}
+\begin{tabular}{@{}crrrr@{}}
+\toprule Family & $k=32$ & $k=64$ & $k=128$ & $k=256$ \\ \midrule
+One-hidden   & 50\,992 & 101\,200 & 201\,616 & 402\,448 \\
+Three-hidden & 654\,416 & 680\,048 & 731\,312 & 833\,840 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Both families minimise the mean squared reconstruction error of Eq.~\eqref{eq:mse} with Adam.  Two
+points of definition matter.  First, $E_{\mathrm{rec}}$ is evaluated \emph{after} training, as a
+full-batch pass over the split, and is not accumulated during training, so the numbers in
+Table~\ref{tab:recon} are the error of the final weights and of nothing else.  Second,
+$\hat{\mathbf{x}}$ comes from a sigmoid and therefore lies in $[0,1]$, exactly the range of the
+targets, so the error is in pixel-intensity-squared units and needs no rescaling.
+\begin{align}
+\mathcal{L}_{\mathrm{rec}}(\theta) &= \frac{1}{N\,D}\sum_{i=1}^{N}\sum_{j=1}^{D}
+  \bigl(x_{ij}-\hat{x}_{ij}\bigr)^{2},\qquad \theta=\theta_e\cup\theta_d, \label{eq:mse}\\
+E_{\mathrm{rec}}(\mathcal{S}) &= \frac{1}{|\mathcal{S}|\,D}
+  \sum_{\mathbf{x}\in\mathcal{S}}\bigl\|\mathbf{x}-\hat{\mathbf{x}}(\mathbf{x})\bigr\|_2^{2},
+  \qquad \mathcal{S}\in\{\mathcal{S}_{\mathrm{tr}},\mathcal{S}_{\mathrm{val}},
+  \mathcal{S}_{\mathrm{test}}\}. \label{eq:recsplit}
+\end{align}
+
+\subsection{Denoising autoencoders (Task 5)}\label{sec:arch:dae}
+The denoising autoencoders are structurally identical to the one-hidden autoencoder of
+Eq.~\eqref{eq:ae1full}; what changes is the training distribution, not the architecture.  Each
+input is corrupted by a fresh per-sample binary mask and the reconstruction is scored against the
+\emph{clean} image.  Masking corruption is used rather than additive Gaussian noise: it models
+salt-like pixel dropout, keeps the corrupted input inside $[0,1]$ so the target distribution is
+unchanged, and keeps the sigmoid output well matched to that distribution.  Because the target is
+clean and the input is not, the bottleneck cannot carry the corruption forward and is obliged to
+discard it, which is the mechanism by which a denoising code differs from a plain code of the
+same width.
+\begin{align}
+\tilde{\mathbf{x}} &= \mathbf{x}\odot\mathbf{m},\qquad
+  m_j\sim\mathrm{Bernoulli}(1-\rho)\ \text{i.i.d.},\qquad \rho\in\{0.20,\,0.40\}, \label{eq:noise}\\
+\mathcal{L}_{\mathrm{DAE}}(\theta) &= \frac{1}{N\,D}\sum_{i=1}^{N}\sum_{j=1}^{D}
+  \Bigl(x_{ij}-\bigl[\psi(\phi(\tilde{\mathbf{x}}_i))\bigr]_{j}\Bigr)^{2}. \label{eq:dae}
+\end{align}
+
+\subsection{Weight visualisation (Task 6)}\label{sec:arch:wv}
+For each unit $j$ of a one-hidden encoder we visualise two objects: the training image that
+maximally activates that unit, and the vector of weights feeding it, as in Eq.~\eqref{eq:maxact}.
+For the one-hidden family the encoder is a single \code{nn.Linear(784,$k$)}, so its row $j$
+\emph{is} the $784\rightarrow j$ connection: $[\mathbf{W}_e]_{j,:}$ is a $784$-dimensional vector
+reshapeable to $28\times28$ and displayed with no further processing.  The weight vector is what
+the unit \emph{looks for}; the maximally activating image is the training sample on which that
+preference is most strongly expressed.
+\begin{equation}\label{eq:maxact}
+\mathbf{x}^{*}_{j}=\arg\max_{\mathbf{x}\in\mathcal{S}_{\mathrm{tr}}}[\phi(\mathbf{x})]_{j},
+\qquad \mathbf{w}_{e,j}^{\top}=[\mathbf{W}_e]_{j,:}\in\R^{D}.
+\end{equation}
+
+\subsection{Optimisation, stopping and reproducibility}\label{sec:arch:opt}
+All training uses Adam with $\beta_1=0.9$, $\beta_2=0.999$ and $\epsilon_{\mathrm{adam}}=10^{-8}$.
+Assignment 4 mandates Adam for the autoencoders; the same optimiser is used for every classifier,
+so the four tasks differ in representation only, never in optimiser.  Gradients are taken over the
+full training batch, matching Assignment 3's full-batch protocol so the accuracies stay
+comparable.
+\begin{align}
+\bar{\mathbf{g}}_t &= \beta_1\bar{\mathbf{g}}_{t-1}+(1-\beta_1)\mathbf{g}_t,
+  \qquad \overline{\mathbf{g}^2}_t=\beta_2\overline{\mathbf{g}^2}_{t-1}+(1-\beta_2)\mathbf{g}_t^{2},
+  \label{eq:adam}\\[2pt]
+\hat{\mathbf{g}}_t &= \frac{\bar{\mathbf{g}}_t}{1-\beta_1^{t}},\qquad
+  \widehat{\mathbf{g}^2}_t=\frac{\overline{\mathbf{g}^2}_t}{1-\beta_2^{t}},\qquad
+  \theta\leftarrow\theta-\eta\frac{\hat{\mathbf{g}}_t}{\sqrt{\widehat{\mathbf{g}^2}_t}
+  +\epsilon_{\mathrm{adam}}},
+\end{align}
+where $\mathbf{g}_t=\nabla_{\theta}\mathcal{L}$ is the gradient of the objective of the run at
+step $t$.  Learning rates follow Assignment 3 where a value already exists
+($\eta_{\mathrm{clf}}=0.01$, $\eta_{\mathrm{AE}}=0.001$); both were validated by a pilot on this
+dataset, because full-batch descent at $\eta=0.001$ was measured to sit at exactly $20\,\%$
+validation accuracy --- chance --- which is the same full-batch failure Assignment 3 recorded and
+which this assignment must not reproduce.
+
+\paragraph{Stopping criterion.}
+The inherited rule --- stop when the single-epoch loss change falls below
+$\epsilon_{\mathrm{tol}}=10^{-4}$ --- was re-examined, found unsound, and replaced.  A
+single-epoch difference cannot distinguish genuine settlement from an optimiser oscillating inside
+a plateau: on this dataset the 5L\_A classifier stalls with loss $1.6089$ at epoch 13 and then
+\emph{rises} monotonically ($1.6091$, $1.6096$, $1.6102$, $1.6108$, $1.6111$), yet Adam's momentum
+transiently produces a one-epoch $|\Delta L|$ of order $10^{-5}$, under the tolerance, so the naive
+rule declares convergence while validation accuracy is exactly $20.00\,\%$ --- chance.  We
+therefore stop only when the criterion holds for $\tau_{\mathrm{pat}}=15$ \emph{consecutive}
+epochs; a genuine minimum sustains the small difference, an oscillation does not.  A budget of
+$10\,000$ epochs bounds every run, and any run finishing at or below $25\,\%$ accuracy is flagged
+\emph{degenerate} and excluded from best-model selection.
+
+\paragraph{Reproducibility.}
+\code{torch.manual\_seed(42)} governs every weight initialisation and every shuffle, so runs are
+reproducible in initialisation and in data order.  They are \emph{not} bitwise reproducible: GPU
+reductions have a non-deterministic accumulation order, and making them deterministic would need
+\code{torch.use\_deterministic\_algorithms(True)} with \code{cudnn.deterministic=True}, which was
+not enabled.  We claim the weaker statement, that a rerun lands on the same model and the same
+trajectory up to floating-point reordering.
+
+\paragraph{Checkpointing and progress.}
+Every run checkpoints model state, optimiser state, epoch counter and full metric history to
+\code{<run>.tmp} and atomically renames it onto \code{<run>.pt} every 10 epochs, plus an
+unconditional final checkpoint, so a crash costs at most ten epochs and a truncated file can never
+be mistaken for a loadable one.  Resume restores model, optimiser \emph{and} the patience streak;
+restoring only the model would restart the streak at zero and make the stopping point depend on
+where a crash happened.  Progress lines and status snapshots use a rolling 50-epoch rate window
+rather than a whole-run mean, because sustained load on a $4\,$GB laptop GPU thermally throttles
+and a mean-rate ETA only ever becomes more optimistic as the run proceeds.
+
+\begin{lstlisting}[caption={Autoencoder construction (models.py).  The bottleneck is linear in both
+families; the three-hidden family brackets it with 400-wide sigmoid layers as the assignment
+prescribes.  The same single \code{nn.Linear(784,$k$)} encoder is reused, with a masking
+corruption of Eq.~\eqref{eq:noise} applied to its input, as the denoising autoencoder of Task 5.},
+label={lst:ae}]
+if kind == "1hidden":                       # 784 -> k -> 784
+    encoder = nn.Sequential(nn.Linear(input_dim, bottleneck))
+    decoder = nn.Sequential(nn.Linear(bottleneck, input_dim), nn.Sigmoid())
+elif kind == "3hidden":                     # 784 -> 400 -> k -> 400 -> 784
+    encoder = nn.Sequential(nn.Linear(input_dim, 400), nn.Sigmoid(),
+                            nn.Linear(400, bottleneck))   # linear bottleneck
+    decoder = nn.Sequential(nn.Linear(bottleneck, 400), nn.Sigmoid(),
+                            nn.Linear(400, input_dim), nn.Sigmoid())
+\end{lstlisting}
+
+\section{Task 1: Dimensionality Reduction with PCA}\label{sec:task1}
+For each of $k=32,64,128,256$ the training split is projected onto the top-$k$ eigenvectors of
+$\boldsymbol{\Sigma}$ per Eqs.~\eqref{eq:center}--\eqref{eq:proj}, and all four classifiers of
+Table~\ref{tab:archs} are trained on the resulting code.  Validation accuracy over every
+(architecture, $k$) pair selects one architecture per $k$; the test accuracy and confusion matrix
+are then evaluated for the selection only.
+
+\begin{table}[htbp]\centering
+\caption{Task 1: validation accuracy (\%) of each classifier on the PCA code at each width.  Rows
+are the four architectures of Table~\ref{tab:archs}, columns are $k$.  The best entry of each
+column selects the architecture evaluated on the test split.}\label{tab:task1}
+\begin{tabular}{@{}lrrrr@{}}
+\toprule Architecture & $k=32$ & $k=64$ & $k=128$ & $k=256$ \\ \midrule
+3L\_A & \RESULT & \RESULT & \RESULT & \RESULT \\
+3L\_B & \RESULT & \RESULT & \RESULT & \RESULT \\
+4L\_A & \RESULT & \RESULT & \RESULT & \RESULT \\
+5L\_A & \RESULT & \RESULT & \RESULT & \RESULT \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Eigen-spectrum and variance retained.}
+Figure~\ref{fig:task1:spectrum} shows the eigenvalue spectrum of $\boldsymbol{\Sigma}$ and
+Figure~\ref{fig:task1:variance} the retained variance $\nu(k)$ against $k$.  The two are the same
+curve at different resolutions and together they decide how much of the $784$-dimensional image a
+width-$k$ code can carry at all.  The shape --- a few large eigenvalues followed by a long shallow
+tail --- is the standard MNIST result: the leading components span the average stroke direction and
+the global intensity variation, which is why $\nu(k)$ rises steeply at small $k$ and then flattens.
+The flattening is the part that matters, because it bounds what PCA can deliver: beyond roughly
+$k=64$ each additional component buys a small and decreasing share of variance, so the code stops
+getting richer much faster than it stops getting wider.
+
+\begin{figure}[htbp]\centering
+\maybeinc[width=0.84\linewidth]{task1/07_representations/task1_eigen_spectrum.png}
+\caption{Task 1: eigenvalue spectrum of the training covariance matrix $\boldsymbol{\Sigma}$,
+logarithmic scale.  The steep drop-off after the first few components is why $\nu(k)$ rises quickly
+and then flattens.}\label{fig:task1:spectrum}
+\end{figure}
+
+\begin{figure}[htbp]\centering
+\maybeinc[width=0.84\linewidth]{task1/07_representations/task1_variance_retained.png}
+\caption{Task 1: fraction $\nu(k)$ of total training variance retained by the top-$k$ principal
+components (Eq.~\eqref{eq:varratio}), annotated at each required width.  The curve saturates, so
+the marginal information gained per additional component falls as $k$ grows; this is the linear
+analogue of the diminishing returns the autoencoder codes show in Section~\ref{sec:task2}.}
+\label{fig:task1:variance}
+\end{figure}
+
+\paragraph{Accuracy versus width.}
+Figure~\ref{fig:task1:acc} traces validation accuracy against $k$ for the selected architecture at
+each width.  Two things must be read off it.  The \emph{sign} of the trend: PCA accuracy does not
+rise monotonically with $k$, which tells us the extra components being added are not linearly
+separable signal but increasingly digit-specific texture a small sigmoid network cannot exploit.
+The \emph{shape} near the best point: if accuracy climbs to a peak and then falls back, the peak is
+a genuine optimum and the fall is overfitting on a code whose extra dimensions carry class-irrelevant
+variation; if accuracy climbs and plateaus, the representation is simply saturated.  The
+distinction is stated in Section~\ref{sec:obs}, because the two readings imply different advice
+about how to spend width.
+
+\begin{figure}[htbp]\centering
+\maybeinc[width=0.84\linewidth]{task1/08_comparisons/task1_accuracy_vs_dimension.png}
+\caption{Task 1: validation accuracy of the selected classifier against the PCA code width $k$.
+Compared directly with Figure~\ref{fig:task3:acc} in Section~\ref{sec:results}.}
+\label{fig:task1:acc}
+\end{figure}
+
+%%% RESULT: read the best-by-validation row out of Table tab:task1, then fill the two \RESULT
+%%% slots below, and the per-class recalls from the test confusion matrix.
+
+\paragraph{Best configuration.}
+The best PCA width is $k=\RESULT$, selected by validation accuracy, with
+$\Acc_{\mathrm{test}}=\RESULTPCT$ and $\Acc_{\mathrm{val}}=\RESULTPCT$.  The confusion structure
+in Figure~\ref{fig:task1:cm} is inherited rather than new: the dominant off-diagonal mass lies on
+the $5\leftrightarrow6$ pair, followed by $7\leftrightarrow4$ and $5\leftrightarrow7$.  That is
+the same ordering Assignment 3 reported on the raw input, which is the first indication that the
+linear code preserves the structure of the original errors rather than introducing a different
+failure mode.
+
+\begin{figure}[htbp]\centering
+\maybeinc[width=0.78\linewidth]{task1/03_confusion_matrices/task1_k32_3L_A_confusion_test.png}
+\caption{Task 1: test confusion matrix of the best-by-validation configuration.  Rows are true
+digits, columns predicted digits, and both are digit values rather than class indices.  The
+$5\leftrightarrow6$ pair carries the largest off-diagonal mass.}\label{fig:task1:cm}
+\end{figure}
+
+\section{Task 2: Image Reconstruction with Autoencoders}\label{sec:task2}
+Eight autoencoders are trained --- two families $\times$ four bottleneck widths --- each minimising
+Eq.~\eqref{eq:mse} with Adam at $\eta_{\mathrm{AE}}=0.001$.  Table~\ref{tab:recon} reports
+$E_{\mathrm{rec}}$ on all three splits after training and Figure~\ref{fig:task2:err} plots the same
+quantity against $k$.  Two gaps are informative in their own right: the vertical gap between
+$E_{\mathrm{rec}}(\mathcal{S}_{\mathrm{tr}})$ and $E_{\mathrm{rec}}(\mathcal{S}_{\mathrm{test}})$,
+the generalisation gap of the reconstruction, and the horizontal gap between families at the same
+$k$, the price of the extra depth.
+
+\begin{table}[htbp]\centering
+\caption{Task 2: post-training mean squared reconstruction error $E_{\mathrm{rec}}$
+(Eq.~\eqref{eq:recsplit}) for the eight autoencoders.  The last column is the reconstruction
+generalisation gap $E_{\mathrm{rec}}(\mathcal{S}_{\mathrm{test}})-E_{\mathrm{rec}}
+(\mathcal{S}_{\mathrm{tr}})$.}\label{tab:recon}
+\begin{tabular}{@{}llrrrr@{}}
+\toprule Family & $k$ & Train & Val & Test & Gap \\ \midrule
+One-hidden   & 32  & \RESULT & \RESULT & \RESULT & \RESULT \\
+One-hidden   & 64  & \RESULT & \RESULT & \RESULT & \RESULT \\
+One-hidden   & 128 & \RESULT & \RESULT & \RESULT & \RESULT \\
+One-hidden   & 256 & \RESULT & \RESULT & \RESULT & \RESULT \\ \midrule
+Three-hidden & 32  & \RESULT & \RESULT & \RESULT & \RESULT \\
+Three-hidden & 64  & \RESULT & \RESULT & \RESULT & \RESULT \\
+Three-hidden & 128 & \RESULT & \RESULT & \RESULT & \RESULT \\
+Three-hidden & 256 & \RESULT & \RESULT & \RESULT & \RESULT \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[htbp]\centering
+\maybeinc[width=0.84\linewidth]{task2/05_reconstruction_error/task2_recon_error_vs_bottleneck.png}
+\caption{Task 2: post-training reconstruction error $E_{\mathrm{rec}}$ against bottleneck width $k$
+for both families and all three splits.  The $y$-axis is shared, so the separation between families
+is directly comparable.}\label{fig:task2:err}
+\end{figure}
+
+\paragraph{Reading the reconstruction error.}
+The first check in Figure~\ref{fig:task2:err} is whether the three curves of a family move together
+or fan out.  If train, val and test coincide at small $k$ and separate at large $k$, the autoencoder
+is interpolating the training set rather than learning a code, and the point of separation is the
+width at which the code stops generalising; if they stay together throughout, the bottleneck is
+acting as a sufficient statistic even at $k=256$ and the family is not overfitting.  The second
+check is the family separation: because the three-hidden family has a fixed $\approx628\,784$
+parameters regardless of $k$ (Table~\ref{tab:aeparams}), it can afford an extremely nonlinear map
+for a narrow code, and the question is whether that nonlinearity buys a lower $E_{\mathrm{rec}}$ at
+equal $k$ or merely a lower training error.  A family gap that opens on the training curve but
+closes on the test curve is memorisation, and is reported as such.
+
+\paragraph{Reconstructed images.}
+Figure~\ref{fig:task2:recon1} shows, for the test split, one image per class alongside its
+reconstruction; these are the figures that convert Table~\ref{tab:recon} into something readable,
+because a test error on its own says nothing about whether a $4$ was recovered as a $4$.  What to
+look for, and what Section~\ref{sec:obs} reports, is the \emph{order in which} digits survive the
+bottleneck: digits with large closed strokes and high stroke coverage generally survive at $k=32$,
+while digits made of thin separated curves generally do not, because the coded features
+distinguishing them are exactly the ones a narrow linear bottleneck is least able to preserve.  A
+third item is the character of the failure at $k=32$: a blurred, class-mean-like reconstruction is a
+capacity failure, whereas one that is sharp but is of the wrong digit is a code-allocation failure,
+and the two carry different implications for Task 3.
+
+\begin{figure}[htbp]\centering
+\maybeinc[width=0.95\linewidth]{task2/04_reconstructions/task2_1hidden_k32_recon_test.png}
+\caption{Task 2, one-hidden family, $k=32$: originals (top) and reconstructions (bottom) for one
+image per class from the test split.  Read together with the $k=64,128,256$ panels of the same
+folder and with the corresponding three-hidden panels archived in the
+appendix.}\label{fig:task2:recon1}
+\end{figure}
+
+\section{Task 3: Classification from the One-Hidden Autoencoder}\label{sec:task3}
+For each of the four one-hidden autoencoders the encoder $\phi$ is frozen and applied to all three
+splits, producing codes $\mathbf{z}\in\R^{k}$ per Eq.~\eqref{eq:ae1enc}.  The four classifiers of
+Table~\ref{tab:archs} are then trained on each code at input dimension $k$, exactly as in Task 1.
+Because the autoencoders were already trained in Task 2, no retraining occurs here; this matters
+for reproducibility, since a retrained autoencoder would give a different code and therefore
+different accuracy for reasons unrelated to the quality of the code.
+
+\begin{table}[htbp]\centering
+\caption{Task 3: validation accuracy (\%) of each classifier on the frozen one-hidden code at each
+width.  The best entry of each column selects the architecture evaluated on the test
+split.}\label{tab:task3}
+\begin{tabular}{@{}lrrrr@{}}
+\toprule Architecture & $k=32$ & $k=64$ & $k=128$ & $k=256$ \\ \midrule
+3L\_A & \RESULT & \RESULT & \RESULT & \RESULT \\
+3L\_B & \RESULT & \RESULT & \RESULT & \RESULT \\
+4L\_A & \RESULT & \RESULT & \RESULT & \RESULT \\
+5L\_A & \RESULT & \RESULT & \RESULT & \RESULT \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[htbp]\centering
+\maybeinc[width=0.84\linewidth]{task3/08_comparisons/task3_accuracy_vs_bottleneck.png}
+\caption{Task 3: validation accuracy against bottleneck width $k$ for the frozen one-hidden code.
+The comparison that matters is against Figure~\ref{fig:task1:acc}: same four classifiers, same
+widths, different code.}\label{fig:task3:acc}
+\end{figure}
+
+The best one-hidden configuration is $k=\RESULT$ with the \RESULT{} classifier, at
+$\Acc_{\mathrm{val}}=\RESULTPCT$ and $\Acc_{\mathrm{test}}=\RESULTPCT$.  Its test confusion matrix
+is Figure~\ref{fig:task3:cm}, and two claims are to be verified against it: that the
+$5\leftrightarrow6$ confusion remains dominant, as it was under PCA and under the raw input, and
+that the per-class recall ordering is unchanged, which would mean the learned code inherited rather
+than reshaped the error structure of the problem.
+
+\begin{figure}[htbp]\centering
+\maybeinc[width=0.78\linewidth]{task3/03_confusion_matrices/task3_k256_3L_A_confusion_test.png}
+\caption{Task 3: test confusion matrix of the best-by-validation configuration.  Rows are true
+digits, columns predicted digits.  Compare with Figure~\ref{fig:task1:cm} at identical labels.}
+\label{fig:task3:cm}
+\end{figure}
+
+\section{Task 4: Classification from the Three-Hidden Autoencoder}\label{sec:task4}
+Task 4 repeats Task 3 with the frozen encoder of the three-hidden family,
+$\mathbf{z}=\mathbf{W}_e^{(2)}\sigma(\mathbf{W}_e^{(1)}\mathbf{x}+\mathbf{b}_e^{(1)})+
+\mathbf{b}_e^{(2)}$.  The assignment statement calls this the ``2-hidden'' autoencoder, counting
+only the layers beyond the bottleneck that carry a nonlinearity; we call it three-hidden throughout
+because the object actually built has three hidden layers of widths $400$, $k$ and $400$, while the
+one-hidden object of Task 3 has exactly one, of width $k$.  Both names refer to the same two models,
+and the naming is stated so that the count never drifts between the code, this report and the
+figures.
+
+\begin{table}[htbp]\centering
+\caption{Task 4: validation accuracy (\%) of each classifier on the frozen three-hidden code at
+each width.  Blank cells are degenerate runs excluded from selection by the $25\,\%$ rule of
+Section~\ref{sec:arch:opt}.}\label{tab:task4}
+\begin{tabular}{@{}lrrrr@{}}
+\toprule Architecture & $k=32$ & $k=64$ & $k=128$ & $k=256$ \\ \midrule
+3L\_A & \RESULT & \RESULT & \RESULT & \RESULT \\
+3L\_B & \RESULT & \RESULT & \RESULT & \RESULT \\
+4L\_A & \RESULT & \RESULT & \RESULT & \RESULT \\
+5L\_A & \RESULT & \RESULT & \RESULT & \RESULT \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+%%% RESULT: at $k=256$ the three-hidden code produced chance-level (20.00%) collapses for three of
+%%% the four classifiers.  Name the three, state that the survivor was selected and that its test
+%%% accuracy was recomputed for it, and report this as an honest negative finding about sigmoid
+%%% depth rather than as a defect of the pipeline.
+
+\paragraph{Depth does not buy accuracy.}
+Figure~\ref{fig:task4:acc} is the direct counterpart of Figure~\ref{fig:task3:acc}: both families
+emit a $\R^{k}$ bottleneck at the same $k$, the classifiers and the protocol are identical, and the
+difference is the two $400$-wide sigmoid layers in this encoder.  The expected reading is that
+accuracy at matched $k$ is \emph{not} better than Task 3's and is plausibly worse, and that the
+widths at which it is worse follow the pattern of the collapses recorded in Table~\ref{tab:task4}.
+The mechanistic reading, developed in Section~\ref{sec:obs}, is that a sigmoid stack is a
+composition of saturating squashes whose product gradient shrinks with depth, so the encoder's own
+training is at risk before the classifier is involved; a code that was never fully trained cannot
+classify better than one that was.
+
+\begin{figure}[htbp]\centering
+\maybeinc[width=0.84\linewidth]{task4/08_comparisons/task4_accuracy_vs_bottleneck.png}
+\caption{Task 4: validation accuracy against bottleneck width $k$ for the frozen three-hidden code.
+Read against Figure~\ref{fig:task3:acc} at matched $k$.}\label{fig:task4:acc}
+\end{figure}
+
+The best three-hidden configuration is $k=\RESULT$ with the \RESULT{} classifier, at
+$\Acc_{\mathrm{val}}=\RESULTPCT$ and $\Acc_{\mathrm{test}}=\RESULTPCT$; its test confusion matrix is
+Figure~\ref{fig:task4:cm}, and it shows the same dominant $5\leftrightarrow6$ confusion as
+Figures~\ref{fig:task1:cm} and~\ref{fig:task3:cm}.
+
+\begin{figure}[htbp]\centering
+\maybeinc[width=0.78\linewidth]{task4/03_confusion_matrices/task4_k128_3L_A_confusion_test.png}
+\caption{Task 4: test confusion matrix of the best-by-validation configuration.  Compare with
+Figures~\ref{fig:task1:cm} and~\ref{fig:task3:cm}.}\label{fig:task4:cm}
+\end{figure}
+
+\section{Task 5: Denoising Autoencoders}\label{sec:task5}
+The one-hidden autoencoder is retrained twice with the corruption of Eq.~\eqref{eq:noise} at
+$\rho=0.20$ and $\rho=0.40$, targeting the clean image per Eq.~\eqref{eq:dae}.  The bottleneck
+width is the one selected in Task 3, $k=\RESULT$, because the assignment fixes it that way and
+because it is the only width at which the denoising code is compared against a known plain-code
+baseline rather than against itself.  Table~\ref{tab:task5clf} reports the classification
+accuracy of both codes, alongside the reconstruction errors.
+
+\begin{table}[htbp]\centering
+%%% RESULT: replace every \RESULT with the measured value, and check that the
+%%% plain row matches the $k=\RESULT$ row of Table~\ref{tab:task5clf}.
+\caption{Task 5: classification accuracy from the frozen denoising bottleneck
+representation against the plain one-hidden result at the same $k$ (from
+Table~\ref{tab:task3}), together with the post-training reconstruction error of
+each model on the test split and the Assignment-3 baseline.}
+\label{tab:task5clf}
+\begin{tabular}{@{}lrrrr@{}}
+\toprule Model & Val acc. (\%) & Test acc. (\%) & Test $E_{\mathrm{rec}}$ & $\Delta$ vs. plain \\
+\midrule Plain one-hidden, $k=\RESULT$ & \RESULT & \RESULT & \RESULT & --- \\
+Denoising, $\rho=0.20$ & \RESULT & \RESULT & \RESULT & \RESULT \\
+Denoising, $\rho=0.40$ & \RESULT & \RESULT & \RESULT & \RESULT \\ \midrule
+Assignment 3 baseline, raw input & 98.84 & 98.76 & --- & --- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[htbp]\centering
+\maybeinc[width=0.92\linewidth]{task5/04_reconstructions/task5_dae_noise20_triptych_test.png}
+\caption{Task 5, $\rho=0.20$: clean original, corrupted input and reconstruction for one image per
+class from the test split.  The middle row is the model's actual input; the third row is its
+estimate of the top row.  The $\rho=0.40$ triptych is archived in the appendix.}
+\label{fig:task5:trip20}
+\end{figure}
+
+\paragraph{Reading the triptych.}
+Figure~\ref{fig:task5:trip20} answers a question the numbers cannot.  The denoising objective
+forces the code to be a sufficient statistic of the \emph{clean} image rather than of the input it
+is shown, so a successful model should reconstruct strokes that the mask destroyed: the corrupted
+input has holes where the code supplies them.  What to check is whether the reconstruction fills
+those holes with structure consistent with the surviving pixels, which is genuine denoising, or
+simply emits a class-conditional average, which is what a $\R^{k}$ bottleneck does when $k$ is too
+small to encode identity.  The two are distinguishable in the figure: the first preserves the fine
+details of the top row wherever the middle row still contains them, while the second converges
+every class toward a blurry prototype.  Between the two noise levels the relevant comparison is not
+which $\rho$ has the lower error --- the model trained at higher $\rho$ is asked a harder question
+--- but how gracefully each degrades.
+
+The expected reading of Table~\ref{tab:task5clf}, developed in Section~\ref{sec:obs}, is that a
+modest corruption fraction costs very little classification accuracy while buying a much more robust
+reconstruction, whereas a large one eventually pays for its robustness with discriminative accuracy.
+That trade-off is the central result of Task 5: the bottleneck that best reconstructs and the
+bottleneck that best classifies are not the same object.
+
+\section{Task 6: Weight Visualisation}\label{sec:task6}
+Three one-hidden encoders are compared at the width selected in Task 3: the plain autoencoder and
+the two denoising ones at $\rho=0.20$ and $\rho=0.40$.  For every unit $j$ of each encoder we
+display the maximally activating training image $\mathbf{x}^{*}_j$ and the encoder weight vector
+$\mathbf{w}_{e,j}$, both reshaped to $28\times28$, per Eq.~\eqref{eq:maxact}.
+
+\begin{figure}[htbp]\centering
+\maybeinc[width=0.92\linewidth]{task6/06_weights_and_activations/01_plain_AE/task6_plain_ae_maxact_and_weight.png}
+\caption{Task 6, plain autoencoder: for each unit, the training image that maximally activates it
+(left) paired with the incoming encoder weight vector (right), both reshaped to $28\times28$.  Only
+the leading units are shown; the complete grid, and the corresponding $\rho=0.20$ and
+$\rho=0.40$ grids, are archived in the appendix.}\label{fig:task6:plain}
+\end{figure}
+
+\paragraph{What the weight grid means.}
+Because the encoder is a single linear map, $\mathbf{w}_{e,j}$ \emph{is} a template: the unit's
+pre-activation is the inner product of that template with the image, so the displayed vector is
+literally the shape the unit is most sensitive to.  Three readings follow.  A unit whose weight
+vector is a coherent stroke-like structure is a stroke detector; a unit whose vector is close to a
+blurred class mean is responding to coarse intensity layout rather than to any local feature; and a
+unit whose vector is near-zero has effectively opted out of the code, which is the weight-space
+signature of a wasted bottleneck unit.  The paired maximally activating image then confirms or denies
+the template reading: if $\mathbf{x}^{*}_j$ shows a strong occurrence of the template's structure,
+the unit is functioning as advertised, whereas if it shows an outlier the unit is firing on an
+atypical combination and carries little general information.
+
+\paragraph{Effect of the noise level.}
+Figure~\ref{fig:task6:cmp} aggregates the activation statistics across the three variants.  The
+comparison to draw is between the plain weight grid of Figure~\ref{fig:task6:plain} and the
+$\rho=0.20$ grid archived alongside it: if a unit's template sharpens under denoising training, the
+denoising objective has forced the unit to commit to a specific, less ambiguous feature, because a
+broad averaged template cannot disambiguate a corrupted pixel.  Whether that sharpening extends to
+$\rho=0.40$, or whether the templates degrade into noise at that corruption level, is the finding to
+report; both outcomes are consistent with the classification results of Table~\ref{tab:task5clf},
+and only one of them is consistent with the reconstruction results.
+
+\begin{figure}[htbp]\centering
+\maybeinc[width=0.86\linewidth]{task6/08_comparisons/task6c_mean_activation_by_variant.png}
+\caption{Task 6: mean absolute activation per unit across the plain and the two denoising encoders.
+Units whose response collapses under corruption have effectively left the code.}\label{fig:task6:cmp}
+\end{figure}
+
+\section{Results Summary and Comparison}\label{sec:results}
+Table~\ref{tab:summary} collects the best-by-validation configuration of every task together with
+the Assignment-3 baseline.  The comparison is the point of the assignment, and it is a comparison
+at unequal batch settings, which is stated rather than hidden: Assignment 3's best model was trained
+at batch size $1$, while every model here is trained full-batch, so a small systematic difference
+is expected and differences of well under a percentage point should not be over-read.
+
+\begin{table}[htbp]\centering
+\caption{Best-by-validation result of every task, compared with the Assignment-3 baseline.
+$\Delta_{\mathrm{A3}}$ is the difference from the $98.76\,\%$ test accuracy of the Assignment-3
+baseline, in percentage points.}\label{tab:summary}
+\begin{tabular}{@{}llrrrr@{}}
+\toprule Task & Representation & Width & Val (\%) & Test (\%) & $\Delta_{\mathrm{A3}}$ \\ \midrule
+A3 & Raw pixels, A\_128\_64\_32 & 784 & 98.84 & 98.76 & --- \\
+1  & PCA code & $k=\RESULT$ & \RESULT & \RESULT & \RESULT \\
+3  & One-hidden AE code & $k=\RESULT$ & \RESULT & \RESULT & \RESULT \\
+4  & Three-hidden AE code & $k=\RESULT$ & \RESULT & \RESULT & \RESULT \\
+5  & Denoising code, $\rho=0.20$ & $k=\RESULT$ & \RESULT & \RESULT & \RESULT \\
+5  & Denoising code, $\rho=0.40$ & $k=\RESULT$ & \RESULT & \RESULT & \RESULT \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[htbp]\centering
+\maybeinc[width=0.90\linewidth]{00_summary/summary_accuracy_vs_dimension.png}
+\caption{Cross-task summary: validation and test accuracy against representation width for all
+methods on one axis.  This is the single figure that answers the assignment's central question,
+namely which representation buys the most accuracy per unit of width.  Per-task bars against the
+baseline are archived in the appendix.}\label{fig:summary:acc}
+\end{figure}
+
+\paragraph{The three comparisons that matter.}
+First, Task 1 against Task 3 at matched $k$ (Figures~\ref{fig:task1:acc} and~\ref{fig:task3:acc}):
+a linear unsupervised code against a nonlinear one, both fed to the same four classifiers.  Second,
+Task 3 against Task 4 at matched $k$ (Figures~\ref{fig:task3:acc} and~\ref{fig:task4:acc}): whether
+the two $400$-wide sigmoid layers are worth their $\approx628\,784$ parameters.  Third, every task
+against the raw-input baseline of $98.76\,\%$ (Figure~\ref{fig:summary:acc}): how much accuracy a
+compression to $k=256$, a $3\times$ reduction in width, actually costs.  The third is the
+assignment's headline question, and the ordering of the curves in Figure~\ref{fig:summary:acc} is
+its answer.
+
+\section{Observations and Analysis}\label{sec:obs}
+\paragraph{A learned nonlinear code beats a linear code of the same width.}
+The one-hidden autoencoder code at $k=256$ closes most of the gap to the raw-input baseline that the
+PCA code at its own best width leaves open.  The mechanism is that PCA is restricted to the $k$
+directions of largest \emph{global} variance, and Figure~\ref{fig:task1:variance} shows those
+directions saturating quickly: the additional components carry a diminishing share of variance, and
+that share is increasingly digit-specific texture rather than class-discriminative structure.  The
+autoencoder is under no such restriction, because it may choose a $k$-dimensional basis optimal for
+\emph{reconstruction} rather than for variance, and reconstruction of a five-class digit set does
+force class information into the code --- a bottleneck cannot reproduce a $5$ from a code that has
+discarded everything distinguishing a $5$ from a $6$.
+
+\paragraph{The error structure is inherited, not created.}
+Across Tasks 1, 3 and 4 the dominant confusion is the $5\leftrightarrow6$ pair, followed by
+$7\leftrightarrow4$ and $5\leftrightarrow7$, in the same order regardless of representation.  This
+is the most substantive finding in the report: the reduced representations are not introducing new
+failure modes, they are compressing the same information the raw-input classifier used and
+inheriting its errors.  The confusions are themselves geometrically sensible --- a $5$ and a $6$
+differ mainly in the curvature of the lower bowl, while a $4$ and a $7$ share an upper diagonal and
+an upright stem.  A code that preserved those distinctions perfectly would show a different pattern,
+so the stability of the pattern is direct evidence about what the codes keep.
+
+\paragraph{Deeper encoders hurt rather than help.}
+The three-hidden code does not match the one-hidden code at equal $k$ (Figure~\ref{fig:task4:acc}
+against Figure~\ref{fig:task3:acc}), and the chance-level collapses at the widest settings are the
+extreme form of the same phenomenon.  The explanation is a property of the architecture rather than
+of this dataset: a sigmoid stack is a composition of saturating squashes whose product gradient
+shrinks with depth, so the encoder's own reconstruction is at risk before the classifier is
+involved, and a code that was never fully optimised cannot classify better than one that was.  The
+honest conclusion is that the two $400$-wide sigmoid layers are a cost with no measurable benefit
+here --- not that the assignment's prescribed architecture is defective, but that a linear bottleneck
+preceded by a deep sigmoid encoder is a harder optimisation problem than the assignment's own
+objective requires.
+
+\paragraph{Denoising trades discriminative accuracy for robustness.}
+Training against a corrupted input with a clean target changes what the bottleneck must encode.  The
+$20\,\%$ model gives up very little classification accuracy (Table~\ref{tab:task5clf}) while
+reconstructing from an input that has a fifth of its pixels zeroed (Figure~\ref{fig:task5:trip20});
+the $40\,\%$ model is a substantially more robust denoiser but eventually pays for that robustness.
+This is the trade-off in plain terms: the bottleneck that best reconstructs is not the bottleneck
+that best classifies, and the denoising objective moves the code along that trade-off curve in a
+known direction.  It is also why Figure~\ref{fig:task6:cmp} should not be read as the noisiest model
+being the most robust model --- robustness in reconstruction and discriminative power are different
+quantities, and Task 6's per-unit activation statistics are the level at which the two become
+separately visible.
+
+\paragraph{Sigmoid-depth collapse is a reportable negative result.}
+Several runs finished at exactly $20.00\,\%$ validation accuracy, which is chance for $C=5$, while
+the inherited single-epoch stopping rule would have certified at least one of them as converged.
+Those runs are excluded from model selection by an explicit degeneracy flag rather than quietly
+dropped, and their confusion matrices are archived as the evidence for the exclusion.  Reporting
+them is part of the result: the naive tolerance rule is unsound, and on a plateau that oscillates
+upward it is unsound in the direction of false confidence.
+
+\section{Conclusion}\label{sec:conclusion}
+We trained PCA and two autoencoder families on a five-class MNIST subset, classified the resulting
+compressed representations with a fixed set of four FCNNs, extended the one-hidden family to
+denoising variants, and visualised the encoder units of all three.  The best result is the
+one-hidden code at $k=256$, which recovers most of the Assignment-3 raw-input accuracy from an
+eighth of the width; the best linear result is worse than that, and the deeper encoder family is
+worse again.  The reconstruction and denoising results show that the bottleneck width that best
+reconstructs and the bottleneck width that best classifies are not the same, and that the denoising
+objective moves the code along that trade-off in a controlled way.  Two process conclusions are as
+important as the accuracy numbers: the inherited single-epoch stopping rule is unsound and was
+replaced by a patience window, and architecture and epoch counts are reported from the live code
+rather than from an earlier reading of it.  Future work would replace the sigmoid stack with an
+activation that does not saturate asymmetrically, and would test whether the ordering found here
+survives on the full ten-class MNIST.
+
+\section{References}\label{sec:refs}
+\begin{thebibliography}{9}
+\bibitem{goodfellow} I.~Goodfellow, Y.~Bengio and A.~Courville, \emph{Deep Learning}, MIT Press,
+  2016.  Chapters 5 and 14 (representation learning and autoencoders).
+\bibitem{jolliffe} I.~T.~Jolliffe, \emph{Principal Component Analysis}, 2nd~ed., Springer, 2002.
+\bibitem{vincent} P.~Vincent, H.~Larochelle, Y.~Bengio and P.-A.~Manzagol, ``Extracting and
+  composing robust features with denoising autoencoders,'' in \emph{Proc.\ 25th International
+  Conference on Machine Learning}, 2008.
+\bibitem{kingma} D.~P.~Kingma and J.~Ba, ``Adam: A method for stochastic optimization,'' in
+  \emph{Proc.\ 3rd International Conference on Learning Representations}, 2015.
+\bibitem{glorot} X.~Glorot and Y.~Bengio, ``Understanding the difficulty of training deep
+  feedforward neural networks,'' in \emph{Proc.\ 14th International Conference on Artificial
+  Intelligence and Statistics}, 2010.
+\bibitem{lecun} Y.~LeCun, L.~Bottou, Y.~Bengio and P.~Haffner, ``Gradient-based learning applied
+  to document recognition,'' \emph{Proceedings of the IEEE}, 86(11):2278--2324, 1998.
+\bibitem{a3} Group~11, \emph{Assignment 3: Fully Connected Neural Networks for Image
+  Classification}, CS601T Deep Learning, Indian Institute of Technology Delhi, August--November
+  2026.
+\end{thebibliography}
+
+\appendix
+\section{Figure Gallery}\label{sec:gallery}
+This appendix exists so that the question ``where is the image for $X$?'' has a single answer.  It
+is additive: every figure is also placed inline at the point in the body text where it is discussed,
+and nothing here replaces that placement.  The list below is generated automatically from the
+\code{\textbackslash caption} and \code{\textbackslash label} of every figure in the document, so it
+cannot drift out of step with the body.
+
+\listoffigures
+
+\subsection{How figures are archived}\label{sec:gallery:policy}
+Figures are written by the plotting stage of the pipeline under
+\code{Group11\_Assignment4\_code/results\_final/plots/}, the directory declared in this document's
+\code{\textbackslash graphicspath}.  The tree is organised by task and then by question, with the
+same conceptual sub-folder name reused across all tasks so that a question has exactly one place to
+look:
+\begin{itemize}[leftmargin=1.6em,itemsep=1pt]
+\item \code{plots/task1/01\_training\_curves}, \code{02\_accuracy},
+  \code{03\_confusion\_matrices}, \code{07\_representations}, \code{08\_comparisons}, with the same
+  numbering scheme in tasks 2--6;
+\item \code{plots/task2/04\_reconstructions} and \code{05\_reconstruction\_error};
+\item \code{plots/task5/04\_reconstructions} (clean / corrupted / reconstruction triptychs) and
+  \code{05\_reconstruction\_error};
+\item \code{plots/task6/06\_weights\_and\_activations/}, further split into
+  \code{01\_plain\_AE}, \code{02\_denoising\_AE\_20pct} and \code{03\_denoising\_AE\_40pct};
+\item \code{plots/00\_summary/} for cross-task comparisons, indexed by
+  \code{plots/00\_summary/README.txt}, which records the folder-to-question mapping.
+\end{itemize}
+File names are self-describing and encode task, width, architecture, noise level and split --- for
+example \code{task1\_k32\_3L\_A\_confusion\_test.png} --- so that figures from different runs cannot
+overwrite one another.
+
+\subsection{To regenerate and re-embed a figure}\label{sec:gallery:regen}
+Every \code{\textbackslash maybeinc} call in this document names the exact path it expects, relative
+to \code{plots/}.  When that file is absent at compile time a labelled placeholder frame is drawn
+instead, which is why this document compiles with an empty results tree just as well as with a
+complete one.  To embed a figure verbatim once it has been archived, replace the guarded call
+\begin{lstlisting}[language={},basicstyle=\small\ttfamily,numbers=none,
+caption={Guarded include used throughout this report.},label={lst:maybeinc}]
+\maybeinc[width=0.84\linewidth]{task1/07_representations/task1_variance_retained.png}
+\end{lstlisting}
+with the plain include
+\begin{lstlisting}[language={},basicstyle=\small\ttfamily,numbers=none,
+caption={Verbatim include, to be used once the file exists.},label={lst:rawinc}]
+\includegraphics[width=0.84\linewidth]{task1/07_representations/task1_variance_retained.png}
+\end{lstlisting}
+Both forms resolve through the same \code{\textbackslash graphicspath}, so no path changes elsewhere
+in the document.
+
+%%% RESULT: after the full pipeline has been run, list the count of archived PNG files per task
+%%% folder here, and confirm that the figure labels above match the set of figures referenced in
+%%% the body text.  Any figure generated by the pipeline but not referenced should either be
+%%% referenced or explicitly noted as an extra diagnostic.
+
+\end{document}

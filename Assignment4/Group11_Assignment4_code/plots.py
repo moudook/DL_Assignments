@@ -189,6 +189,12 @@ def loss_and_accuracy(history, title, save_path, tol=1e-4):
     Exported for every run so no figure needs a re-run to produce later.
     """
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(7, 6.5), sharex=True)
+    # A resumed run can legitimately have no history if it did zero epochs and
+    # the caller passed an empty list; indexing history[0] would then raise.
+    if not history:
+        ax1.text(0.5, 0.5, "no training history", ha="center", va="center")
+        ax1.set_title(title)
+        return save_atomic(fig, save_path)
     eps = [h["epoch"] for h in history]
     loss = [h.get("loss", float("nan")) for h in history]
     finite = [v for v in loss if np.isfinite(v)]
