@@ -243,6 +243,15 @@ def run_task5(data, outdir="results", max_epochs=MAX_EPOCHS, device=None,
         survivors = {a: v for a, v in clf_archs.items() if a not in collapsed}
         if not survivors:
             survivors = clf_archs
+        # task3_arch comes from selection.json and is indexed below, so it must be
+        # present in the trained set. Guarded rather than assumed: with a --archs
+        # subset that omits Task-3's winner this used to raise KeyError.
+        if task3_arch not in clf_archs:
+            missing = sorted(set(clf_archs) | {task3_arch})
+            raise KeyError(
+                f"Task-3's architecture {task3_arch!r} was not trained here. "
+                f"Available: {sorted(clf_archs)}. Trained set {missing}. "
+                f"Task-5d requires Task-3's architecture to be among them.")
         best_arch = max(survivors.items(),
                         key=lambda kv: (kv[1]["val_acc"], -kv[1]["epochs_run"]))[0]
         best = clf_archs[best_arch]
@@ -296,7 +305,7 @@ def run_task5(data, outdir="results", max_epochs=MAX_EPOCHS, device=None,
         # Loss/accuracy curve for every architecture at this noise level.
         for arch, av in clf_archs.items():
             plots.loss_and_accuracy(
-                av.get("history", []),
+                av.get("_history", []),
                 f"Task-5: {tag}% noise, {arch} — classifier loss and accuracy",
                 os.path.join(dirs["training"],
                              f"task5_clf_{tag}_{arch}_loss_accuracy.png"),
@@ -406,6 +415,9 @@ def run_task5(data, outdir="results", max_epochs=MAX_EPOCHS, device=None,
                    key=lambda kv: kv[1]["classifier"]["test_acc"])
     results["best_noise"] = float(best_tag[1]["noise"])
     results["best_test_accuracy"] = best_tag[1]["classifier"]["test_acc"]
+    # Previously this top-level key did not exist at all (the per-noise-level
+    # "best_arch" lives inside by_noise), so selection.json recorded null.
+    results["best_arch"] = best_tag[1]["best_arch"]
     print(f"\n  BEST noise level by test accuracy: {best_tag[1]['noise']:.0%}")
 
     atomic_write_text(json.dumps(_jsonable(results), indent=2, default=float),

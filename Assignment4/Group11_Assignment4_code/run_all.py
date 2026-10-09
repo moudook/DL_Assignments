@@ -303,28 +303,6 @@ def main():
     print(f"Monitor : python monitor.py --outdir {args.outdir} --watch --gpu")
 
 
-def k_is_1hidden(key):
-    """
-    True for a Task-2 cache key of the 1-hidden autoencoder family.
-
-    Keys look like "1hidden_32". The numeric suffix must be parsed rather than
-    string-matched, so callers can ask for a SPECIFIC bottleneck: Task-6 needs
-    the 1-hidden encoder at Task-3's winning width, not whichever one happens to
-    be first in the dict.
-    """
-    key = str(key)
-    if not key.startswith("1hidden_"):
-        return False
-    return key.split("_", 1)[1].isdigit()
-
-
-def bottleneck_of(key):
-    """Extract the bottleneck width from a Task-2 cache key, or None."""
-    parts = str(key).split("_", 1)
-    if len(parts) == 2 and parts[1].isdigit():
-        return int(parts[1])
-    return None
-
 
 if __name__ == "__main__":
     main()

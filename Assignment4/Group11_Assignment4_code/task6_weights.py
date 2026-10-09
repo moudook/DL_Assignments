@@ -30,11 +30,10 @@ import torch
 
 import plots
 from plots import ensure_dir
-from data import load_splits
 from evaluate import maximally_activating
 from models import build_autoencoder, build_denoising_autoencoder
-from run_tracker import atomic_write_text
-from train import train_autoencoder, MAX_EPOCHS, AUTOENCODER_LR
+from run_tracker import RunTracker, atomic_write_text
+from train import train_autoencoder, MAX_EPOCHS
 
 # Cap on units shown per figure. A 256-unit grid at readable size needs several
 # pages; the full set is available via the weight_image_grid figure and the JSON,

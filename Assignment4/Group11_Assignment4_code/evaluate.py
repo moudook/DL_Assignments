@@ -122,7 +122,11 @@ def reconstruction_grid(model, data, split, indices, device=None):
     A4 requires one image from each class, for train/val/test, shown alongside
     its reconstruction. `indices` comes from data.one_per_class().
 
-    Returns (originals, reconstructions, labels) as lists of 28x28 arrays.
+    Returns (originals, reconstructions, indices) as lists of 28x28 arrays plus
+    the sample indices used. The third element previously evaluated the tensor's
+    `.shape` for truthiness and returned a list of ints, which was meaningless;
+    every caller discarded it, so nothing broke, but it would mislead anyone who
+    started using the return value.
     """
     if device is None:
         device = next(model.parameters()).device
@@ -133,8 +137,7 @@ def reconstruction_grid(model, data, split, indices, device=None):
     sample = X[idx]
     rec = model(sample)
 
-    return _to_grid_images(sample), _to_grid_images(rec), list(idx.shape and
-                                                               range(len(indices)))
+    return _to_grid_images(sample), _to_grid_images(rec), list(indices)
 
 
 # ── Task-6 weight visualisation ─────────────────────────────────────────────

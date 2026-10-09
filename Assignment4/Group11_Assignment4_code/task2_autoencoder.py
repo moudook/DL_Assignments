@@ -31,8 +31,7 @@ from data import CLASS_NAMES, one_per_class
 from evaluate import reconstruction_grid
 from models import BOTTLENECKS, build_autoencoder, count_params
 from run_tracker import RunTracker, atomic_write_text, thin_history
-from train import train_autoencoder, reconstruct_error, MAX_EPOCHS, \
-    AUTOENCODER_LR, TOL
+from train import train_autoencoder, MAX_EPOCHS, AUTOENCODER_LR, TOL
 
 # A4 Task-2a mandates both depths.
 AE_KINDS = ["1hidden", "3hidden"]

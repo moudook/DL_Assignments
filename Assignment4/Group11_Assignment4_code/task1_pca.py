@@ -175,6 +175,12 @@ def run_task1(data, outdir="results", dims=DIMENSIONS, max_epochs=MAX_EPOCHS,
 
         dim_entry["best_arch"] = best_arch
         dim_entry["test_accuracy"] = test_res["accuracy"]
+        # Also record it per-architecture so the test-accuracy heatmap can fill
+        # the SELECTED architecture's cell. That cell used to fall back to nan,
+        # because the per-architecture loop skips best_arch, leaving 4 of 16
+        # heatmap cells silently blank.
+        dim_entry["architectures"][best_arch]["test_accuracy_all_archs"] = \
+            test_res["accuracy"]
         dim_entry["train_accuracy"] = train_res["accuracy"]
         dim_entry["test_confusion_matrix"] = test_res["confusion_matrix"]
         dim_entry["test_per_class"] = test_res["per_class"]

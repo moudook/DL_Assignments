@@ -213,6 +213,10 @@ def run_ae_classify(data, kind, task_id, outdir="results",
 
         entry["best_arch"] = best_arch
         entry["test_accuracy"] = test_res["accuracy"]
+        # Mirror it into the per-architecture entry so the test-accuracy heatmap
+        # covers the selected architecture too; otherwise its cell is nan.
+        entry["architectures"][best_arch]["test_accuracy_all_archs"] = \
+            test_res["accuracy"]
         entry["train_accuracy"] = train_res["accuracy"]
         entry["test_confusion_matrix"] = test_res["confusion_matrix"]
         entry["test_per_class"] = test_res["per_class"]

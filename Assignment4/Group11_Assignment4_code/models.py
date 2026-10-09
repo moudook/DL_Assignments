@@ -25,8 +25,6 @@ stream. The 4-hidden and 5-hidden shapes suit Xavier (tanh-like symmetric regime
 sigmoid is also fine with Xavier but slightly conservative.
 """
 
-import copy
-
 import torch
 import torch.nn as nn
 
