@@ -41,6 +41,20 @@
   \footnotesize\texttt{\detokenize{#1}}\\[1pt]\scriptsize figure not archived yet\end{minipage}}}
 \newcommand{\R}{\mathbb{R}}\newcommand{\given}{\mid}\newcommand{\Acc}{\mathrm{Acc}}
 \newcommand{\code}[1]{\texttt{#1}}
+
+\definecolor{inferencebg}{HTML}{F4F6F8}
+\definecolor{inferencebar}{HTML}{4A6FA5}
+
+\newcommand{\infer}[1]{%
+  \par\vspace{2pt}\noindent
+  \begin{minipage}{\linewidth}
+    \colorbox{inferencebg}{%
+      \begin{minipage}{\dimexpr\linewidth-2\fboxsep\relax}
+        \vspace{2pt}\noindent
+        {\small\textbf{\textcolor{inferencebar}{What this shows}} --- }#1
+        \vspace{2pt}
+      \end{minipage}}%
+  \end{minipage}\par\vspace{4pt}}
 % \RESULT / \RESULTPCT are retained so that a future run can be dropped back into the
 % template without editing the macro preamble; they are unused here.
 \setlength{\parskip}{3pt}\setlength{\parindent}{0pt}\renewcommand{\arraystretch}{1.13}
@@ -159,6 +173,13 @@ carries almost none of the within-class variation --- are both visible only at t
 
 \begin{figure}[htbp]\centering
 \maybeinc[width=0.9\linewidth]{00_dataset/dataset_sample_grid.png}
+\infer{Eight arbitrary examples per class, drawn from the training split. The variation within a
+class is larger than the variation between several of the classes: stroke thickness ranges over a
+factor of about three, the digit's position within the $28\times28$ frame shifts by several pixels,
+and slant varies from near-upright to strongly italic. Nothing in this figure is a label; it is the
+input the classifier must be invariant to. The point of showing it is that the five classes are
+distinguished by coarse shape rather than by fine detail, which is why a $32$-dimensional code can
+carry almost all of the usable signal.}
 \caption{The input.  Eight training images per class, drawn from the training split.  The five
 classes are visually the hardest subset MNIST offers to write by hand: a $0$ and a $6$ share a
 closed loop, a $4$ and a $7$ share a diagonal, and a $5$ and a $6$ differ mainly in the
@@ -170,6 +191,11 @@ reason a five-class task on this subset is not the ten-class task it is derived 
 
 \begin{figure}[htbp]\centering
 \maybeinc[width=0.82\linewidth]{00_dataset/dataset_class_distribution.png}
+\infer{The three bars of every class are in the ratio $3:1:1$ and are equal across classes, which
+is what makes the split exact rather than approximate. The visual consequence is that the bar chart
+is uninformative on its own --- five identical triples of bars --- and its value is entirely
+negative: it rules out accuracy differences being caused by class imbalance. This is also the figure
+that fixes chance accuracy at exactly $20.00\,\%$, since each split is one fifth per class.}
 \caption{Split balance.  Every split contributes exactly $2\,277$ training, $759$ validation and
 $759$ test images per class, so accuracy and chance accuracy ($20\,\%$) are directly comparable
 across classes and across splits.  There is no class for which a difference in score could be
@@ -178,6 +204,13 @@ attributed to a difference in how many examples it has.}\label{fig:data:balance}
 
 \begin{figure}[htbp]\centering
 \maybeinc[width=0.95\linewidth]{00_dataset/dataset_mean_and_std_images.png}
+\infer{The two halves are the crux. Averaging $2\,277$ images destroys most of each digit: the
+$0$ is a hollow ring, the $4$ is a smear, the $5$ is a blur with no internal structure. Yet each
+mean is still recognisable, because the stroke position is consistent across writers. The right half
+is the informative one --- the within-class standard deviation is largest exactly along the strokes,
+so the pixels that carry the class signal are also the pixels that vary most. This is the visual
+form of the statement that a single mean vector is a poor summary of a class, and it is why the
+prototype distance of Fig.~\ref{fig:data:dist} is a weak predictor of anything.}
 \caption{Class prototypes (left) and within-class spread (right), each averaged over the
 $2\,277$ training images of its class.  The means are the quantity the prototype-distance
 figure of Fig.~\ref{fig:data:dist} is built from; the spreads are the quantity they discard.
@@ -190,6 +223,14 @@ information is present, but a single mean vector per class retains only a small 
 
 \begin{figure}[htbp]\centering
 \maybeinc[width=\linewidth]{00_dataset/dataset_class_mean_distances.png}
+\infer{The left panel shows the class means are nearly equidistant --- every off-diagonal entry lies
+between $3.9$ and $6.3$, a spread of only $60\%$ of the smallest distance --- so no pair is
+dramatically closer than any other. The centre panel shows the confusion mass is emphatically
+\emph{not} evenly spread: $5\leftrightarrow6$ carries $32$ of the $67$ off-diagonal errors while
+five pairs carry under $5$ each. The right panel puts the two orderings side by side and the points
+scatter away from the diagonal, giving Spearman $\rho=-0.22$. Had proximity driven confusion the
+points would hug the diagonal with a positive slope; instead the single most-confused pair sits at
+proximity rank $4$, and the closest pair $4\leftrightarrow7$ is only rank $2$ in confusion.}
 \caption{Prototype proximity does not predict which pairs get confused.  Left: Euclidean
 distance between the five class means of Fig.~\ref{fig:data:prototypes}.  Centre: off-diagonal
 confusion mass for Task-1's selected configuration.  Right: the two orderings against each other;
@@ -511,6 +552,14 @@ cannot serve both, and the figures are the reason the claim is not merely assert
 
 \begin{figure}[htbp]\centering
 \maybeinc[width=0.78\linewidth]{task1/01_training_curves/task1_k32_3L_B_loss_accuracy.png}
+\infer{The top panel is log-scaled, so the eye should read gaps of a decade rather than absolute
+heights. Cross-entropy falls by more than three decades and then flattens; the classic elbow is
+around epoch $40$, and the tolerance line at $10^{-4}$ sits at the very bottom of the plotted
+range, far below where this run stops. The bottom panel is where the real information is: accuracy
+overshoots sharply between epochs $20$ and $40$ --- the training curve spikes to about $85\%$,
+drops back, then recovers --- which is the classifier oscillating across the decision boundary
+before settling. The validation and training curves lie on top of each other from epoch $50$
+onward, so there is no overfitting to speak of at this width.}
 \caption{Classifier convergence (Task 1, PCA $k=32$, 3L\_B).  Top: training cross-entropy on a log
 scale against epoch, with the $10^{-4}$ tolerance line drawn for reference.  Bottom: training and
 validation accuracy.  The loss has fallen by more than two orders of magnitude and the accuracy
@@ -521,6 +570,12 @@ crossing the decision boundary, not a failure to converge.}\label{fig:conv:clf}
 
 \begin{figure}[htbp]\centering
 \maybeinc[width=0.78\linewidth]{task2/01_training_curves/task2_1hidden_k256_loss.png}
+\infer{The curve spans four decades on the $y$-axis, which is the whole argument of
+Fig.~\ref{fig:conv:clf} made visible on a different model. Note that the reconstruction error is
+still falling visibly at epoch $6\,000$: it has decelerated but not stopped, so a rule keyed to
+"has the loss changed" would keep firing indefinitely while a rule keyed to "has the best loss
+improved" correctly stops it. The vertical ticks along the curve are the plateau-reset events, each
+one marking a fifty-epoch window in which no improvement over the running best occurred.}
 \caption{Autoencoder convergence (Task 2, one-hidden, $k=256$).  Reconstruction MSE on a log
 scale against epoch, with the inherited $10^{-4}$ tolerance line drawn.  The curve crosses the
 line early and keeps descending for six thousand epochs, reaching its plateau at $6\,555$ by the
@@ -610,6 +665,13 @@ getting richer much faster than it stops getting wider.
 
 \begin{figure}[htbp]\centering
 \maybeinc[width=0.84\linewidth]{task1/07_representations/task1_eigen_spectrum.png}
+\infer{The $y$-axis is logarithmic and spans twelve decades, so the curve's depth is the finding
+rather than its exact shape. The first eigenvalue is roughly $10^1$ and by component $30$ the
+spectrum has already fallen to about $10^{-1}$, a drop of two decades within the first $4\%$ of
+components --- the leading components dominate almost everything. After component $700$ the curve
+falls off a cliff to $10^{-11}$, which is the numerical floor of the covariance estimate rather
+than structure in the data. The four dotted markers at $k=32,64,128,256$ all sit in the steep
+early part, so every width under study is chosen from the informative region.}
 \caption{Task 1: eigenvalue spectrum of the training covariance matrix $\boldsymbol{\Sigma}$,
 logarithmic scale.  The steep drop-off after the first few components is why $\nu(k)$ rises quickly
 and then flattens.}\label{fig:task1:spectrum}
@@ -617,6 +679,11 @@ and then flattens.}\label{fig:task1:spectrum}
 
 \begin{figure}[htbp]\centering
 \maybeinc[width=0.84\linewidth]{task1/07_representations/task1_variance_retained.png}
+\infer{This is the cumulative integral of the previous figure, read as a running total. The curve
+rises steeply at first and is visibly flattening by $k=32$, where $75.9\,\%$ of the variance is
+already retained. The four annotated values are the ones that matter: the step from $k=32$ to
+$k=256$ buys $22$ points of variance but, as Fig.~\ref{fig:task1:acc} shows, \emph{costs}
+accuracy --- the additional dimensions are mostly directions of low variance and high noise.}
 \caption{Task 1: fraction $\nu(k)$ of total training variance retained by the top-$k$ principal
 components (Eq.~\eqref{eq:varratio}), annotated at each required width.  The curve saturates, so
 the marginal information gained per additional component falls as $k$ grows; this is the linear
@@ -633,6 +700,12 @@ misread.
 
 \begin{figure}[htbp]\centering
 \maybeinc[width=0.84\linewidth]{task1/08_comparisons/task1_accuracy_vs_dimension.png}
+\infer{Read this beside Fig.~\ref{fig:task1:variance} and the inversion is the finding. More
+retained variance does not mean more accuracy: the $k=32$ bars are the tallest and every increase
+in $k$ makes them shorter, even as $\nu(k)$ rises to $97.9\,\%$ at $k=256$. The bars are also
+suspiciously flat --- all four sit between $97\%$ and $98.5\%$ against a $98.76\%$ baseline line
+--- which is the effect of a $y$-axis starting at zero: the real spread of $1.2$~pp is invisible at
+this scale, and the figure understates its own result.}
 \caption{Task 1: validation accuracy of the selected classifier against the PCA code width $k$.
 Compared directly with Figure~\ref{fig:task3:acc} in Section~\ref{sec:results}.}
 \label{fig:task1:acc}
@@ -665,6 +738,12 @@ alone.\label{sec:obs:falsing}
 
 \begin{figure}[htbp]\centering
 \maybeinc[width=0.78\linewidth]{task1/03_confusion_matrices/task1_k32_3L_B_confusion_test.png}
+\infer{The diagonal is visually dominant and every off-diagonal cell is pale, which is the direct
+visual statement that $97$--$99\,\%$ of each class is correctly identified. The informative cells
+are the few that are not: the $5\leftrightarrow6$ pair carries the largest mass, and the
+$4\leftrightarrow7$ pair is second. Rows are true classes and columns are predictions, so the
+matrix is not symmetric --- the $6$-to-$5$ and $5$-to-$6$ cells differ, meaning a real $5$ is called
+a $6$ more often than the reverse.}
 \caption{Task 1: test confusion matrix of the selected configuration, $k=32$ with the 3L\_B
 classifier.  Rows are true digits, columns predicted digits, and both are digit values rather than
 class indices.  The $5\leftrightarrow6$ pair carries the largest off-diagonal mass.}
@@ -701,6 +780,12 @@ Three-hidden  & 256  & 0.001330 & 0.002317 & 0.002346 & 0.001016 \\
 
 \begin{figure}[htbp]\centering
 \maybeinc[width=0.84\linewidth]{task2/05_reconstruction_error/task2_recon_error_all.png}
+\infer{Eight architectures are grouped three times, once per split, and the comparison to make is
+\emph{within} each split rather than across them. The one-hidden family falls monotonically with
+$k$ --- the $k=256$ bar is roughly a seventh of the $k=32$ bar --- while the three-hidden family
+starts worse at small $k$ and converges to almost the same value at $k=256$. Adding two hidden
+layers buys nothing here; what buys reconstruction quality is bottleneck width. The train, val and
+test groups are near-identical, so the autoencoders are not overfitting either.}
 \caption{Task 2: post-training reconstruction error $E_{\mathrm{rec}}$ against bottleneck width $k$
 for both families and all three splits.  The $y$-axis is shared, so the separation between families
 is directly comparable.}\label{fig:task2:err}
@@ -732,6 +817,13 @@ and the two carry different implications for Task 3.
 
 \begin{figure}[htbp]\centering
 \maybeinc[width=0.95\linewidth]{task2/04_reconstructions/task2_1hidden_k32_recon_test.png}
+\infer{The reconstructions are recognisable at a glance, which is the point, but the differences are
+in the detail. The $0$ keeps its loop but the stroke is roughly twice as thick as the original; the
+$5$ loses the separation between its upper bar and lower curve, so the reconstruction reads as a
+blurred blob rather than a digit with internal structure; the $7$'s diagonal survives while its
+right-hand stroke thins. Since the error is a mean over $784$ pixels, most of it is concentrated in
+exactly these thin features --- the pixels that distinguish one digit from another are the ones the
+$32$-dimensional code cannot afford to keep.}
 \caption{Task 2, one-hidden family, $k=32$: originals (top) and reconstructions (bottom) for one
 image per class from the test split.  Read together with the $k=64,128,256$ panels of the same
 folder and with the corresponding three-hidden panels archived in the
@@ -762,6 +854,12 @@ split.}\label{tab:task3}
 
 \begin{figure}[htbp]\centering
 \maybeinc[width=0.84\linewidth]{task3/08_comparisons/task3_accuracy_vs_bottleneck.png}
+\infer{The bars here are flat where the PCA bars of Fig.~\ref{fig:task1:acc} slope downward, and
+that difference is the finding: the learned code does not degrade as its width grows, so it is
+using its dimensions more evenly than the principal components do. All four pairs sit just below
+the $98.76\%$ baseline, and the gap to it narrows as $k$ rises rather than widening. The $y$-axis
+again starts at zero, so the $1$~pp spread between widths is compressed into an almost invisible
+difference at the top of the bars.}
 \caption{Task 3: validation accuracy against bottleneck width $k$ for the frozen one-hidden code.
 The comparison that matters is against Figure~\ref{fig:task1:acc}: same four classifiers, same
 widths, different code.}\label{fig:task3:acc}
@@ -769,6 +867,12 @@ widths, different code.}\label{fig:task3:acc}
 
 \begin{figure}[htbp]\centering
 \maybeinc[width=0.78\linewidth]{task3/01_training_curves/task3_k32_3L_A_loss_accuracy.png}
+\infer{Compare the two panels' horizontal extents rather than their values: this run stops at $393$
+epochs where the PCA run of Fig.~\ref{fig:conv:clf} needed $293$ at $k=32$, and the early
+behaviour is visibly different. Accuracy sits at chance for the first $10$ epochs, then climbs in
+one sharp jump to about $95\%$ around epoch $40$, then plateaus. The jump is the classifier
+discovering whichever directions of the frozen code carry the class information; the absence of
+further improvement afterwards means the code, not the classifier, is the binding constraint.}
 \caption{Task 3 convergence for the selected configuration ($k=32$, 3L\_A).  The classifier is
 trained on the frozen code rather than on raw pixels, so the shape of this curve can be compared
 panel-for-panel with Figure~\ref{fig:conv:clf}, which is the same architecture on raw input: both
@@ -789,6 +893,11 @@ best width ($98.23\,\%$) rather than above it.
 
 \begin{figure}[htbp]\centering
 \maybeinc[width=0.78\linewidth]{task3/03_confusion_matrices/task3_k32_3L_A_confusion_test.png}
+\infer{Structurally the same figure as Fig.~\ref{fig:task1:cm} and that is the point --- the
+learned code produces the same confusion pattern, not a different one. The dominant cell is again
+$5\leftrightarrow6$, now with $17$ errors where PCA at $k=32$ had $16$, and the second is again
+$4\leftrightarrow7$. Because the two matrices are near-identical, the errors are a property of the
+dataset's intrinsic class overlap rather than of any particular representation.}
 \caption{Task 3: test confusion matrix of the selected configuration, $k=32$ with the 3L\_A
 classifier.  Rows are true digits, columns predicted digits.  Compare with
 Figure~\ref{fig:task1:cm} at identical labels.}
@@ -843,6 +952,10 @@ is therefore not made worse by the deeper encoder, and is not cured by it either
 
 \begin{figure}[htbp]\centering
 \maybeinc[width=0.84\linewidth]{task4/08_comparisons/task4_accuracy_vs_bottleneck.png}
+\infer{Read against Fig.~\ref{fig:task3:acc} at the same four $k$ values: these bars are slightly
+taller at three of the four widths, which is the whole claim that depth helps. The $k=64$ pair is
+where the gap is widest, and it is also where this task's best configuration sits --- the same
+width the winning architecture needs is the width that makes the deeper encoder worth building.}
 \caption{Task 4: validation accuracy against bottleneck width $k$ for the frozen three-hidden code.
 Read against Figure~\ref{fig:task3:acc} at matched $k$.}\label{fig:task4:acc}
 \end{figure}
@@ -857,6 +970,12 @@ baseline and this configuration sits $0.2620$~pp below it.
 
 \begin{figure}[htbp]\centering
 \maybeinc[width=0.78\linewidth]{task4/03_confusion_matrices/task4_k64_4L_A_confusion_test.png}
+\infer{The off-diagonal cells are visibly paler than in Fig.~\ref{fig:task3:cm}, and the count
+confirms it: $17$ total errors here against $19$ in Task 3, with the largest single cell
+$5\rightarrow6$ now carrying $9$ rather than $10$. The pattern of \emph{which} pairs are confused is
+unchanged, so the deeper code has not redistributed the errors onto different digits --- it has
+reduced them uniformly. That is what makes the third confusion matrix in the sequence evidence of
+an inherited error structure rather than a random one.}
 \caption{Task 4: test confusion matrix of the selected configuration, $k=64$ with the 4L\_A
 classifier.  Compare with Figures~\ref{fig:task1:cm} and~\ref{fig:task3:cm}.}
 \label{fig:task4:cm}
@@ -888,6 +1007,12 @@ Assignment 3 baseline, raw input & 98.84 & 98.76 & --- & --- \\
 
 \begin{figure}[htbp]\centering
 \maybeinc[width=0.78\linewidth]{task5/01_training_curves/task5_dae_noise20_loss.png}
+\infer{The curve is noisier than Fig.~\ref{fig:conv:ae} at every epoch, and the noise does not
+decay as training proceeds --- the corruption is redrawn each epoch, so a fixed set of weights sees
+a different objective every time. This is exactly the failure mode the plateau window is chosen to
+be immune to: a single-epoch difference would fire on any local dip, while the monotone best-so-far
+trace is smooth. Note also that this run stops at $2\,130$ epochs, less than half of the plain
+autoencoder's $6\,555$, because the corrupted reconstruction is a much easier target.}
 \caption{Denoising convergence at $\rho=0.20$, on the same log-scale axes as
 Figure~\ref{fig:conv:ae} and against the same inherited tolerance line.  Two features distinguish
 it from the plain autoencoder's curve.  The masked corruption makes the loss noisy epoch to epoch
@@ -899,6 +1024,13 @@ corrupted reconstruction is an easier target than the clean one.}\label{fig:task
 
 \begin{figure}[htbp]\centering
 \maybeinc[width=0.92\linewidth]{task5/04_reconstructions/task5_dae_noise20_triptych_test.png}
+\infer{Three rows, and the row to study is the middle one. The corrupted inputs are recognisably the
+same digits with a scattering of black holes where pixels were zeroed; the reconstructions below
+them are nearly indistinguishable from the clean top row, not from the corrupted middle row. The
+model has learned to fill the holes rather than to reproduce them, which is what Eq.~\eqref{eq:dae}
+asks of it. Comparing row three against row one gives the $59\%$ of baseline figure of
+Fig.~\ref{fig:obs:denoise}; comparing it against row two would give a much flattering but
+meaningless number.}
 \caption{Task 5, $\rho=0.20$: clean original, corrupted input and reconstruction for one image per
 class from the test split.  The middle row is the model's actual input; the third row is its
 estimate of the top row.  The $\rho=0.40$ triptych is archived in the appendix.}
@@ -933,6 +1065,13 @@ input), not between robustness and discriminative power.
 
 \begin{figure}[htbp]\centering
 \maybeinc[width=\linewidth]{00_summary/summary_noise_robustness.png}
+\infer{Two panels, and the left one is the load-bearing one. For each corruption level the blue
+bar is the model's error on the corrupted input and the orange bar is the error of doing nothing;
+the blue is shorter at both levels, so the model beats copying rather than merely approaching it.
+The $40\%$ group is the more striking comparison: the orange bar roughly doubles while the blue
+bar rises only modestly, so the \emph{relative} advantage is larger at the higher corruption, which
+is what the right panel's falling curve shows. The dashed line at $100\%$ is the do-nothing
+reference --- everything below it is genuine denoising.}
 \caption{The denoising result as a direct measurement against the do-nothing baseline.  Left:
 error on the \emph{corrupted} input for each denoising model, against the error of copying that
 corrupted input through untouched.  Right: the same quantity expressed as a percentage of the
@@ -951,6 +1090,13 @@ $\mathbf{w}_{e,j}$, both reshaped to $28\times28$, per Eq.~\eqref{eq:maxact}.
 
 \begin{figure}[htbp]\centering
 \maybeinc[width=0.92\linewidth]{task6/06_weights_and_activations/01_plain_AE/task6_plain_ae_maxact_and_weight.png}
+\infer{The two rows answer two different questions and should not be read as one image. The top row
+is \emph{which training image drives this unit hardest} --- a single real digit per unit, chosen by
+arg-max over the training set. The bottom row is \emph{what the unit is looking for}, the encoder
+weight vector reshaped to image space. The two are related but not the same: the weights are
+smoothed, blurred, edge-enhanced versions of what the unit likes, which is what a single
+$784$-input linear unit looks like when trained on MNIST. Many units respond to blank or
+near-blank borders, which is the visual signature of dead units.}
 \caption{Task 6, plain autoencoder: for each unit, the training image that maximally activates it
 (left) paired with the incoming encoder weight vector (right), both reshaped to $28\times28$.  Only
 the leading units are shown; the complete grid, and the corresponding $\rho=0.20$ and
@@ -981,6 +1127,12 @@ and only one of them is consistent with the reconstruction results.
 
 \begin{figure}[htbp]\centering
 \maybeinc[width=0.86\linewidth]{task6/08_comparisons/task6c_mean_activation_by_variant.png}
+\infer{Three bars for three models, all sharing the same $k=32$ bottleneck, so the comparison is
+of training regime rather than of capacity. The values rise monotonically from plain, to $20\%$
+noise, to $40\%$ noise --- roughly $9.6\%$ higher at the highest corruption. The plain and $20\%$
+bars are close enough that the difference could be noise, but the jump to $40\%$ is well outside
+it. The interpretation is that a denoising encoder must activate more strongly to repair larger
+holes, and the increase is the cost of robustness in activation magnitude.}
 \caption{Task 6: mean absolute activation per unit across the plain and the two denoising encoders.
 Units whose response collapses under corruption have effectively left the code.}\label{fig:task6:cmp}
 \end{figure}
@@ -1014,6 +1166,13 @@ A3 & Raw pixels, A\_128\_64\_32 & 784 & 98.84 & 98.76 & --- \\
 
 \begin{figure}[htbp]\centering
 \maybeinc[width=0.90\linewidth]{00_summary/summary_accuracy_vs_dimension.png}
+\infer{The three lines cross each other, which is the single most important feature of this
+figure. No representation dominates at every width: PCA starts ahead at $k=32$ but falls below
+both autoencoders by $k=64$, and the three-hidden code peaks around $k=64$ before declining. This
+is why the "which is best" question has no single answer, and it is the reason the report compares
+at matched $k$ in Fig.~\ref{fig:summary:gain} instead of comparing maxima. All three lines sit
+below the dashed Assignment-3 baseline at every width, so no configuration here beats the
+raw-input model.}
 \caption{Cross-task summary: validation and test accuracy against representation width for all
 methods on one axis.  This is the single figure that answers the assignment's central question,
 namely which representation buys the most accuracy per unit of width.  Per-task bars against the
@@ -1022,6 +1181,12 @@ baseline are archived in the appendix.}\label{fig:summary:acc}
 
 \begin{figure}[htbp]\centering
 \maybeinc[width=0.95\linewidth]{task1/08_comparisons/task1_heatmap_test.png}
+\infer{The $y$-axis is architecture and the $x$-axis is width, so each column is a vertically
+striped pattern rather than a blob --- the architecture effect is larger than the width effect. The
+5L\_A row is visibly broken at the two largest widths, where the cells drop to $79$ and $59\%$;
+this is the collapse discussed in Section~\ref{sec:obs:degenerate} shown as a colour change. The
+remaining rows change by roughly $1\%$ across the whole grid, which says that for these
+architectures the choice of $k$ hardly matters once degeneracy is avoided.}
 \caption{Task 1: the full $16$-cell test-accuracy grid, which is the raw evidence the width choice
 of Section~\ref{sec:selbias} is made over.  Every cell was measured; none is generated for the
 purpose of being selected.  The matching grids for Tasks 3 and 4 are
@@ -1031,6 +1196,12 @@ purpose of being selected.  The matching grids for Tasks 3 and 4 are
 
 \begin{figure}[htbp]\centering
 \maybeinc[width=0.95\linewidth]{task1/08_comparisons/task1_heatmap_val.png}
+\infer{Placed directly after Fig.~\ref{fig:task1:heat} so the two can be compared cell for cell.
+The overall shape is the same --- the same architecture rows, the same two broken 5L\_A cells ---
+but the numbers differ by up to $0.3$~pp per cell, and the ranking within a row is not always
+preserved. This is the visual form of the selection-bias argument: the grid that the architecture
+choice is allowed to use is not the grid that gets reported, so a maximum over the test grid is
+optimistic by construction.}
 \caption{Task 1: the same sixteen configurations scored on \emph{validation} accuracy, which is the
 set the architecture choice is actually made from.  Reading this beside
 Figure~\ref{fig:task1:heat} shows how little the two grids agree at the top: both put
@@ -1042,6 +1213,12 @@ use and what a report quotes.}\label{fig:task1:heat:val}
 
 \begin{figure}[htbp]\centering
 \maybeinc[width=0.88\linewidth]{00_summary/summary_accuracy_bars.png}
+\infer{Unlike the line plot above, this figure flattens everything: because the $y$-axis runs from
+zero to $100$, twelve bars spanning a $0.26$~pp range are all the same height to the eye. It is the
+one figure in this report whose design hides its own result --- the ranking is visible only if the
+reader recalls the numbers from Table~\ref{tab:summary}. The honest reading is that every method
+lands within a quarter of a percentage point of the Assignment-3 baseline, and the bar chart is the
+clearest statement of that fact even though it cannot rank them.}
 \caption{Every task's selected accuracy as a bar, against the Assignment-3 baseline.  The spread
 between the best and worst representation is $0.26$~pp, which is the same order as the selection
 bias of Section~\ref{sec:selbias} and an order of magnitude below the $0.4$~pp by which the best
@@ -1051,6 +1228,13 @@ informative thing one can do with it.}\label{fig:summary:bars}
 
 \begin{figure}[htbp]\centering
 \maybeinc[width=0.88\linewidth]{00_summary/summary_width_vs_gain.png}
+\infer{The two curves cross, and that crossing is the finding. At $k=32$ the one-hidden code leads
+PCA by only $0.11$~pp while the three-hidden code trails it; by $k=128$ both lead and the
+one-hidden advantage is at its largest. Neither curve reaches $\pm1$~pp anywhere, so the entire
+nonlinear benefit is under a point --- the figure's $y$-axis was set deliberately so that this
+scale is legible, since on a zero-to-$100$ axis the effect would vanish. The blue curve's
+non-monotonic dip between $k=32$ and $k=64$ is why the report quotes four separate numbers rather
+than a single average.}
 \caption{The comparison that isolates representation quality: the accuracy advantage of each
 autoencoder family over PCA \emph{at matched width}, rather than the difference between their
 maxima.  This is the figure that answers whether the nonlinear code is better without the
@@ -1063,6 +1247,12 @@ $k$ is the one that means what it appears to mean.}\label{fig:summary:gain}
 
 \begin{figure}[htbp]\centering
 \maybeinc[width=0.88\linewidth]{00_summary/summary_per_class_by_task.png}
+\infer{Five digits by four methods, and the pattern is vertical: within each digit the four bars are
+nearly identical in height, and the digits themselves differ by only about $1$~pp. Digit $7$ is the
+hardest for every method and digit $0$ the easiest, in the same order for all four. That the
+per-digit difficulty ordering is stable across representations is the evidence for the claim that
+the representations inherit rather than create error structure --- a property of the data, not of
+the compression.}
 \caption{Per-class test accuracy of every task's selected configuration.  The floor is
 $96.9\,\%$ at the worst (digit, task) pair, so no digit is being dropped by any representation,
 and the ordering of difficulty is identical across all four tasks.  What the figure adds beyond
@@ -1224,7 +1414,7 @@ conditions rather than between robustness and discriminative power, and it shoul
 as the latter.  Figure~\ref{fig:task6:cmp} is where the two become separately visible at unit
 level.
 
-\paragraph{Deep-classifier collapse is a reportable negative result.}
+\paragraph{Deep-classifier collapse is a reportable negative result.}\label{sec:obs:degenerate}
 Six runs of the 5L\_A architecture stopped at $58.81$, $59.63$, $77.87$, $77.87$, $78.34$ and
 $79.45\,\%$ validation accuracy --- between roughly three and four times chance, and far below any
 usable classifier.  Under the naive stopping rule every one of them is certified
