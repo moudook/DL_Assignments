@@ -270,15 +270,30 @@ class RunTracker:
     def has_checkpoint(self):
         return os.path.exists(self.ckpt_path)
 
-    def finish(self, status, **metrics):
+    def finish(self, status, model=None, optimizer=None, extra=None,
+               watch=None, **metrics):
         """
-        Mark the run terminal and record its outcome, then close the log.
+        Mark the run terminal, save the FINAL weights, then close the log.
 
         Any log() must happen BEFORE calling this: finish() closes the handle,
         and RunTracker.log() deliberately does not reopen it. Reopening silently
-        would hide ordering bugs; leaving it to raise does the opposite, which is
-        how a warning logged after finish() was caught.
+        would hide ordering bugs; leaving it to raise does the opposite, which
+        is how a warning logged after finish() was caught.
+
+        Saving here is what makes a checkpoint verifiable. The periodic save in
+        check() fires only every CHECKPOINT_EVERY epochs, so the on-disk weights
+        were previously 0-9 epochs behind the model whose metrics the results
+        JSON reports. An independent audit that reloaded a checkpoint and
+        re-evaluated it got 98.52% where the JSON said 98.50%, with nothing in
+        the artifacts to explain the gap. Writing the final state before closing
+        means the checkpoint IS the reported model.
         """
+        if model is not None:
+            merged = dict(extra or {})
+            if watch is not None:
+                merged["watch_state"] = watch.state_dict()
+            self.check(self.history[-1]["epoch"] if self.history else 0,
+                       model=model, optimizer=optimizer, extra=merged)
         self.done = True
         self.final_status = status
         self.log(f"FINISH status={status} " + " ".join(f"{k}={v}" for k, v in metrics.items()))

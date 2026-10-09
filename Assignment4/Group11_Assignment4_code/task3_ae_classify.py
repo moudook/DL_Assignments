@@ -36,8 +36,9 @@ from evaluate import evaluate_classifier
 from models import BOTTLENECKS, CLASSIFIER_ARCHS, build_classifier, \
     build_autoencoder
 from run_tracker import RunTracker, atomic_write_text, thin_history
-from train import train_classifier, train_autoencoder, encode_all, MAX_EPOCHS, \
-    AUTOENCODER_LR, CLASSIFIER_LR, TOL
+from train import (train_classifier, train_autoencoder, encode_all,
+                    selection_bias_report, MAX_EPOCHS, AUTOENCODER_LR,
+                    CLASSIFIER_LR, TOL)
 
 A3_TEST_ACC = 0.9876
 A3_VAL_ACC = 0.9884
@@ -279,8 +280,22 @@ def run_ae_classify(data, kind, task_id, outdir="results",
     results["best_arch"] = best_b[1]["best_arch"]
     results["best_test_accuracy"] = best_b[1]["test_accuracy"]
 
+    # A4 mandates picking the best representation off the test scores, which
+    # makes the headline a maximum over several test numbers and therefore
+    # optimistically biased. Record the bias and the honest alternatives rather
+    # than reporting only the flattering maximum.
+    results["selection_bias"] = selection_bias_report(
+        results["by_bottleneck"],
+        get_test=lambda v: v["test_accuracy"],
+        get_val=lambda v: v["architectures"][v["best_arch"]]["val_acc"],
+    )
+    _sb = results["selection_bias"]
     print(f"\n  BEST representation by test accuracy: k={results['best_bottleneck']} "
           f"({100 * results['best_test_accuracy']:.2f}%)")
+    print(f"  bias: max is {_sb['max_minus_mean_pp']:+.2f} pp above the "
+          f"{100 * _sb['mean_across_representations']:.2f}% mean; "
+          f"validation would pick k={_sb['selected_by_validation']} "
+          f"({100 * _sb['selected_by_validation_accuracy']:.2f}%)")
 
     # ── Task-3c / Task-4c comparison figures ─────────────────────────────────
     # Accuracy vs bottleneck answers "which representation is best".

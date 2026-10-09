@@ -62,6 +62,8 @@ def run_task2(data, outdir="results", bottlenecks=BOTTLENECKS, max_epochs=MAX_EP
         "lr": AUTOENCODER_LR,
         "loss": "MSE",
         "tolerance": TOL,
+        # The autoencoders do NOT use the absolute TOL; see train.AE_PLATEAU_WINDOW.
+        "stopping_rule": "plateau on windowed best loss (relative)",
         "max_epochs": max_epochs,
         "batch_size": "full",
         "activation": "logistic sigmoid",
@@ -147,6 +149,7 @@ def run_task2(data, outdir="results", bottlenecks=BOTTLENECKS, max_epochs=MAX_EP
                 "recon_error": recon,
                 "epochs_run": res["epochs_run"],
                 "stopped_early": res["stopped_early"],
+                "stopping_rule": res.get("stopping_rule"),
                 "history": res["history"],
                 "grids": grid_paths,
                 "model_state": res["model_state"],

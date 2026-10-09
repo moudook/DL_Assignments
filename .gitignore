@@ -74,10 +74,24 @@ Assignment4/Group11_Assignment4_code/pilot_findings.json
 # Pre-rerun comparison snapshot (created only to verify reproducibility).
 Assignment4/_baseline_snapshot/
 
-# LaTeX report: main.tex IS tracked (it is the source of truth); the compiled
-# PDF and every build artefact are not. The PDF is delivered through Moodle,
-# not through git, and is rebuilt with: pdflatex main.tex
+# Stray result files at the CODE ROOT, not inside a run directory.
+# run_all.py only ever writes these into <outdir>/. Copies sitting beside the
+# source are leftovers from an earlier ad-hoc run and go stale the moment a new
+# run finishes - an independent audit read the root copy instead of
+# results_final/ and quoted a superseded run's numbers. Ignore them, and delete
+# the existing ones so the next reader cannot repeat that.
+Assignment4/Group11_Assignment4_code/summary.json
+Assignment4/Group11_Assignment4_code/selection.json
+
+# LaTeX report: the .tex SOURCES are tracked (they are the source of truth); the
+# compiled PDFs and every build artefact are not. The PDFs are delivered through
+# Moodle, not through git, and are rebuilt with: pdflatex report.tex
+#
+# Two .tex files by design. main.tex is the template and keeps its \RESULT
+# placeholders so a future run can be dropped back into it; report.tex is the
+# filled, corrected version that compiles to report.pdf and is what is submitted.
 Assignment4/Group11_Assignment4_code/report/main.pdf
+Assignment4/Group11_Assignment4_code/report/report.pdf
 Assignment4/Group11_Assignment4_code/report/*.aux
 Assignment4/Group11_Assignment4_code/report/*.log
 Assignment4/Group11_Assignment4_code/report/*.out

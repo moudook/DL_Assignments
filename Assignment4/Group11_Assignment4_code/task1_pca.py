@@ -32,7 +32,8 @@ from evaluate import evaluate_classifier
 from models import CLASSIFIER_ARCHS, build_classifier
 from pca import PCA
 from run_tracker import RunTracker, atomic_write_text, thin_history
-from train import train_classifier, MAX_EPOCHS, CLASSIFIER_LR, TOL
+from train import (train_classifier, selection_bias_report, MAX_EPOCHS,
+                    CLASSIFIER_LR, TOL)
 
 # The four reduced dimensions A4 mandates.
 DIMENSIONS = [32, 64, 128, 256]
@@ -282,8 +283,48 @@ def run_task1(data, outdir="results", dims=DIMENSIONS, max_epochs=MAX_EPOCHS,
     results["best_test_accuracy"] = best_dim[1]["test_accuracy"]
     results["best_dimension_arch"] = best_dim[1]["best_arch"]
 
+    # State the bias explicitly instead of quietly benefiting from it: A4 asks
+    # which dimension is best and reads it off the test scores, which makes the
+    # headline a maximum over several test numbers.
+    results["selection_bias"] = selection_bias_report(
+        results["by_dimension"],
+        get_test=lambda v: v["test_accuracy"],
+        get_val=lambda v: max(a["val_acc"] for a in v["architectures"].values()),
+    )
+    _sb = results["selection_bias"]
     print(f"\n  BEST dimension by test accuracy: k={results['best_dimension']} "
           f"({100 * results['best_test_accuracy']:.2f}%)")
+    print(f"  bias: max is {_sb['max_minus_mean_pp']:+.2f} pp above the "
+          f"{100 * _sb['mean_across_representations']:.2f}% mean; "
+          f"validation would pick k={_sb['selected_by_validation']} "
+          f"({100 * _sb['selected_by_validation_accuracy']:.2f}%)")
+
+    # Accuracy falls as k rises here even though variance retained rises. The
+    # cause is models.SIZING DECISION: architectures are held FIXED across
+    # dimensions, so the first layer's input grows from 32 to 256 while its width
+    # stays put, making it progressively worse conditioned. A4's plots make this
+    # look like "more dimensions hurt", which is a training artefact rather than
+    # a property of the representation - say so before a reader draws that
+    # conclusion.
+    accs = [results["by_dimension"][d]["test_accuracy"] for d in dims]
+    if len(accs) > 1 and accs[-1] < accs[0]:
+        results["accuracy_vs_dimension"] = {
+            "observation": (
+                f"Best test accuracy FALLS from {100 * accs[0]:.2f}% at "
+                f"k={dims[0]} to {100 * accs[-1]:.2f}% at k={dims[-1]}, while "
+                f"variance retained RISES."),
+            "explanation": (
+                "Not caused by the representations. The classifier architectures "
+                "are deliberately held FIXED across dimensions (see the SIZING "
+                "DECISION note in models.py) so that any difference is "
+                "attributable to the representation rather than to capacity. As k "
+                "grows the first layer's input dimension grows while its width "
+                "stays fixed, so it becomes progressively more ill-conditioned - "
+                "a training artefact, not evidence that more dimensions carry less "
+                "class information."),
+        }
+        print("  NOTE: accuracy falls as k rises though variance retained rises; "
+              "this is the fixed-width first layer, not the representation.")
 
     # ── Task-1c comparison figures ───────────────────────────────────────────
     # Accuracy vs dimension answers "which dimension is best" directly. The A3

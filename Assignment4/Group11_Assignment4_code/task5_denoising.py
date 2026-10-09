@@ -193,7 +193,7 @@ def run_task5(data, outdir="results", max_epochs=MAX_EPOCHS, device=None,
 
         # Task-5d. Two readings of A4's Task-5d coexist, so both are satisfied:
         #   - the note "use the same best architecture as Task-3" names ONE
-        #     architecture, which is recorded as task3_best_arch;
+            #     architecture, which is recorded as task3_selected_arch;
         #   - 5d-ii says "for the different architectures of FCNN classification
         #     model", which asks for validation AND test accuracy across the
         #     architecture set used in Tasks 1/3/4.
@@ -329,16 +329,25 @@ def run_task5(data, outdir="results", max_epochs=MAX_EPOCHS, device=None,
             # Task-6 without retraining it.
             "model_state": res["model_state"],
             "recon_error": recon,
+            "denoise_error": res.get("denoise_error"),
             "epochs_run": res["epochs_run"],
+            "stopping_rule": res.get("stopping_rule"),
             "stopped_early": res["stopped_early"],
             "history": res["history"],
             "grids": grids,
-            # The architecture A4's note directs us to use for this noise level,
-            # recorded separately from whichever architecture won on validation
-            # so the report can state both.
-            "task3_best_arch": task3_arch,
-            "task3_best_arch_val_acc": clf_archs[task3_arch]["val_acc"],
-            "task3_best_arch_test_acc": clf_archs[task3_arch]["test_acc"],
+                # The architecture A4's note directs us to use for this noise level,
+                # recorded separately from whichever architecture won on validation
+                # so the report can state both.
+                # The accuracy keys are deliberately NOT called
+                # "task3_best_arch_val_acc": that reads as Task-3's own score,
+                # which it is not. They are THIS task's scores on the architecture
+                # Task-3 selected. Misnaming them once made a reader quote Task-5's
+                # val accuracy where Task-3's was wanted.
+                "task3_selected_arch": task3_arch,
+                "this_task_val_acc_on_task3_arch":
+                    clf_archs[task3_arch]["val_acc"],
+                "this_task_test_acc_on_task3_arch":
+                    clf_archs[task3_arch]["test_acc"],
             "classifier_archs": clf_archs,
             "best_arch": best_arch,
             "classifier": {

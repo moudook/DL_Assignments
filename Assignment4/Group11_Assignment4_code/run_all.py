@@ -283,6 +283,16 @@ def main():
     total = (time.time() - t_start) / 60
     atomic_write_text(json.dumps(summary, indent=2, default=float),
                       os.path.join(args.outdir, "summary.json"))
+    # Results live ONLY under <outdir>. An earlier ad-hoc run left summary.json
+    # and selection.json beside the source; they went stale while results_final/
+    # moved on, and an independent audit read the stale copy and reported numbers
+    # that matched nothing in the real run. Remove any such strays so the only
+    # summary a reader can find is the current one.
+    for _stray in ("summary.json", "selection.json"):
+        _p = os.path.join(os.path.dirname(os.path.abspath(__file__)), _stray)
+        if os.path.exists(_p):
+            os.remove(_p)
+            print(f"Removed stale root {_stray} (results live in {args.outdir}/)")
 
     # Drop figure subfolders that never received a figure, so browsing the tree
     # shows only folders that actually hold something.

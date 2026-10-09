@@ -33,12 +33,13 @@ the model actually beat chance. A run that stops at chance is visible as
 stopped_early with a poor metric, not silently reported as a success.
 """
 
-import copy
+import collections
 import os
 
 import torch
 import torch.nn as nn
 
+from models import make_noise
 from run_tracker import atomic_save
 
 TOL = 1e-4
@@ -77,11 +78,14 @@ STOP_PATIENCE = 15
 # plateau. The identical delta on a cross-entropy of 1.6 would be 0.006% and
 # genuinely converged. A single absolute tolerance cannot serve both loss scales.
 #
-# The assignment mandates the absolute 1e-4 criterion, so it is kept verbatim. What
-# is added is a FLOOR: the rule cannot fire before this many epochs, which costs
-# little (these runs finish in minutes) and removes the premature-stop failure
-# without altering the specified criterion.
-MIN_EPOCHS_BEFORE_STOP = 200
+# The assignment mandates the absolute 1e-4 criterion, so it is kept verbatim.
+# An earlier revision added an epoch FLOOR before the rule could fire, on the
+# theory that it would suppress the premature stops. Both call sites now pass
+# min_epochs=0, because it emerged that the floor was binding on runs whose
+# classifier trained properly (stopping them early for no benefit) and was
+# unnecessary once the AEs were moved onto the plateau rule. It was therefore
+# dead code and has been removed rather than left to describe behaviour the
+# code does not have.
 
 CLASSIFIER_LR = 0.01     # pilot-validated; 0.001 sits at chance at full batch
 AUTOENCODER_LR = 0.001   # A4 mandates Adam; pilot-validated
@@ -90,6 +94,24 @@ AUTOENCODER_LR = 0.001   # A4 mandates Adam; pilot-validated
 # short of their achievable reconstruction error because MSE and cross-entropy
 # differ in scale by ~100x. See _ConvergenceWatch.__init__ for the traces.
 AE_REL_TOL = 1e-3
+# Window, in epochs, over which "best loss so far" must stop improving.
+#
+# Why a WINDOW and not an epoch-to-epoch delta:
+#   - an epoch-to-epoch delta cannot tell a plateau from steady slow descent.
+#     Measured: under relative tolerance the 1-hidden autoencoders were still
+#     improving ~0.1% per epoch when it fired, and replaying the identical run to
+#     12,000 epochs reached 1.83x lower reconstruction error.
+#   - the denoising AEs resample their corruption mask every epoch, so the
+#     per-epoch delta jitters far above the threshold. Neither denoiser ever
+#     completed the required streak: both ran the full 10,000 epochs. The
+#     criterion was silently disabled exactly where A4 requires it most.
+#
+# "Best loss has not improved over the last WINDOW epochs" is immune to both:
+# it is scale-free (a ratio), it is immune to per-epoch jitter (it tracks the
+# monotone best, not the noise), and under geometric decay L_t = L_0 g^t the
+# windowed improvement is (1 - g^W), which shrinks to zero only when the decay
+# genuinely stops.
+AE_PLATEAU_WINDOW = 50
 MAX_EPOCHS = 10000       # measured affordable: ~4.6 min worst-case AE
 CHECKPOINT_EVERY = 10
 LOG_EVERY = 100
@@ -102,14 +124,23 @@ def _accuracy(logits, y):
     return (logits.argmax(1) == y).float().mean().item()
 
 
-# Accuracy at or below this is indistinguishable from guessing for 5 classes
-# (1/5 = 20%). Set slightly above chance so a genuine collapse is caught.
-CHANCE_ACC = 0.25
+CHANCE = 1.0 / 5
 
 
-def flag_degenerate(final_acc, chance=1.0 / 5):
+# A run below this validation accuracy is not a converged model, it is a failed
+# one. Calibrated against the runs actually observed on this dataset: legitimate
+# results sit at 97-99% and the 5L_A architecture's failures sit at 58.8%, 59.6%
+# and 77.9%. 85% sits cleanly between those two groups - far enough above every
+# failure to catch them all, far enough below every real result to never risk
+# mislabelling a success. It is specific to this dataset rather than a general
+# rule, which is deliberate: a fixed multiple of chance cannot separate them,
+# since 77.9% is nearly 4x chance.
+DEGENERATE_BELOW = 0.85
+
+
+def flag_degenerate(final_acc, chance=CHANCE):
     """
-    True when a run ended at chance - i.e. it learned nothing.
+    True when a run learned too little to be called converged.
 
     Needed because the A3 stopping rule CANNOT distinguish "converged to a good
     solution" from "stopped moving because the gradient vanished". A deep sigmoid
@@ -118,13 +149,66 @@ def flag_degenerate(final_acc, chance=1.0 / 5):
 
     Observed for real in this pipeline: the 5L_A architecture [64,32,16,8,4]
     stopped at exactly 20.00% val accuracy after 20 epochs, reported as
-    converged. Five stacked sigmoid layers attenuate the signal
-    multiplicatively and the gradient underflows, so training never begins.
-    Every finished run therefore carries an explicit `degenerate` flag, which
-    task modules surface rather than leaving a chance-level model to be read as
-    a valid result.
+    converged. Five stacked sigmoid layers attenuate the signal multiplicatively
+    and the gradient underflows, so training never begins.
+
+    The original threshold was 1.25x chance, which only caught the 20% case. An
+    independent audit then found the wider band this still misses: 5L_A runs
+    settling at 58.8%, 59.6% and 77.9% val accuracy were all still recorded as
+    "converged" with degenerate=False. They are severely underfit - they learned
+    *something*, so they escaped the chance test, but nowhere near enough to be a
+    usable classifier, and calling them successes is the same error one notch up.
+    Hence the absolute DEGENERATE_BELOW threshold documented above.
+
+    Every finished run therefore carries an explicit `degenerate` flag, which task
+    modules surface rather than leaving a failed model to be read as a valid
+    result.
     """
-    return bool(final_acc <= max(chance * 1.25, chance))
+    return bool(final_acc < DEGENERATE_BELOW)
+
+
+def selection_bias_report(by_key, get_test, get_val):
+    """
+    Quantify the optimism in "pick the representation with the best TEST score".
+
+    A4 asks which reduced representation classifies best, and reads that off the
+    test scores. Doing so means the headline is a maximum over several test
+    numbers, so it is biased upward: even if every representation were equally
+    good, the luckiest one would still score above the truth. An independent
+    audit measured the size of that gap here as +0.17 to +0.47 pp.
+
+    Reporting only the maximum hides it. This returns the same number alongside
+    the mean across representations, the maximum-minus-mean gap, and what a
+    validation-selected choice would have scored - so the report can state the
+    bias instead of quietly benefiting from it.
+
+    Architecture selection is val-only and is not affected; only this
+    across-representation choice is.
+    """
+    tests = {k: get_test(v) for k, v in by_key.items()}
+    vals = {k: get_val(v) for k, v in by_key.items()}
+    best_test_key = max(tests, key=lambda k: tests[k])
+    best_val_key = max(vals, key=lambda k: vals[k])
+    mean = sum(tests.values()) / len(tests)
+    return {
+        "criterion": "best test accuracy (as mandated by A4)",
+        "criterion_is_optimistically_biased": True,
+        "bias_note": (
+            "The best representation is chosen by test accuracy, so this is a "
+            "maximum over several test scores and is biased upward. The honest "
+            "unbiased estimate is the mean across representations, and the "
+            "validation-selected choice is reported alongside."),
+        "selected_by_test": int(best_test_key) if isinstance(best_test_key, int)
+                            else best_test_key,
+        "selected_by_test_accuracy": tests[best_test_key],
+        "mean_across_representations": mean,
+        "max_minus_mean_pp": 100 * (tests[best_test_key] - mean),
+        "selected_by_validation": int(best_val_key) if isinstance(best_val_key, int)
+                                   else best_val_key,
+        "selected_by_validation_accuracy": vals[best_val_key],
+        "per_representation_test": tests,
+        "per_representation_val": vals,
+    }
 
 
 def _guard_finite(name, tensor, epoch):
@@ -153,25 +237,28 @@ class _ConvergenceWatch:
     """
 
     def __init__(self, tol=TOL, patience=STOP_PATIENCE,
-                 min_epochs=MIN_EPOCHS_BEFORE_STOP, mode="abs"):
+                 min_epochs=0, mode="abs", window=None):
         self.tol = tol
         self.patience = patience
-        # Epochs that must elapse before the criterion is even considered. See
-        # MIN_EPOCHS_BEFORE_STOP for the measured premature-stop this prevents.
+        # Epochs that must elapse before the criterion is even considered. Zero
+        # by default and zero at every call site - the MIN_EPOCHS_BEFORE_STOP
+        # floor it once refused to work below was removed as dead code.
         self.min_epochs = min_epochs
-        # "abs"  -> |L_t - L_{t-1}| < tol                      (A3's literal rule)
-        # "rel"  -> |L_t - L_{t-1}| < tol * |best loss seen|   (scale-free)
+        # "abs"     -> |L_t - L_{t-1}| < tol                   (A3's literal rule)
+        # "rel"     -> |L_t - L_{t-1}| < tol * |best loss|     (scale-free delta)
+        # "plateau" -> best loss has not improved by more than tol (relative)
+        #              over a window of `window` epochs. Immune to per-epoch
+        #              jitter, so it works with the stochastic denoising objective.
         #
-        # The two are NOT interchangeable. Replaying real 1500-epoch traces:
-        #   1hidden k=256  abs1e-4 stops at ep186 loss 0.0181; rel1e-3 at ep1030
-        #                   loss 0.0023  -> 8x lower final reconstruction error
-        #   3hidden k=256  abs1e-4 stops at ep 39 loss 0.0666; rel1e-3 at ep1132
-        #                   loss 0.0085  -> 8x lower
-        # Cross-entropy starts near 1.6, where an absolute 1e-4 is 0.006% and
-        # genuinely converged; MSE settles near 0.02, where the same 1e-4 is
-        # 0.5% per epoch and the model is still improving. Hence classifiers keep
-        # the A3-mandated absolute rule and autoencoders use the relative one.
+        # The three are NOT interchangeable. Replaying real 1500-epoch traces:
+        #   1hidden k=256  abs1e-4 stops ep186 loss 0.0181 | rel1e-3 stops ep1030
+        #                   loss 0.0023; but continuing to 12,000 epochs reaches
+        #                   0.00195, so "rel" also stops short.
+        # For the autoencoders only "plateau" certifies convergence.
         self.mode = mode
+        self.window = window or patience
+        # Monotone best-loss history, for the plateau test.
+        self._best_hist = collections.deque(maxlen=self.window + 1)
         self.streak = 0
         self.prev_loss = None
         self.best_loss = float("inf")
@@ -181,13 +268,33 @@ class _ConvergenceWatch:
 
     def state_dict(self):
         return {"streak": self.streak, "prev_loss": self.prev_loss,
-                "best_loss": self.best_loss, "improved": self.improved}
+                "best_loss": self.best_loss, "improved": self.improved,
+                # The plateau window IS the criterion's state, not decoration.
+                # Without it a resumed run falls back to `window=patience` (or
+                # whatever the constructor defaults to) and re-evaluates the
+                # history from a truncated deque, so it can stop far earlier
+                # than the rule intends. `_best_hist` is likewise part of the
+                # state: after a resume it is empty, and an empty deque silently
+                # disables the plateau test.
+                "mode": self.mode, "window": self.window,
+                "min_epochs": self.min_epochs, "triggered": self.triggered,
+                "best_hist": list(self._best_hist)}
 
     def load_state_dict(self, sd):
         self.streak = sd.get("streak", 0)
         self.prev_loss = sd.get("prev_loss")
         self.best_loss = sd.get("best_loss", float("inf"))
         self.improved = sd.get("improved", False)
+        # Prefer the saved rule over the constructor's default, so a run resumed
+        # from a checkpoint keeps the criterion it was actually trained under.
+        self.mode = sd.get("mode", self.mode)
+        self.window = sd.get("window", self.window)
+        self.min_epochs = sd.get("min_epochs", self.min_epochs)
+        self.triggered = sd.get("triggered", False)
+        hist = sd.get("best_hist")
+        if hist:
+            self._best_hist = collections.deque(list(hist),
+                                                maxlen=self.window + 1)
 
     def update(self, loss, epoch):
         """Feed one epoch's loss. Returns True once the criterion is satisfied."""
@@ -195,11 +302,20 @@ class _ConvergenceWatch:
             self.improved = True
         if loss < self.best_loss:
             self.best_loss = loss
+        self._best_hist.append(self.best_loss)
+
+        if self.mode == "plateau":
+            # Fire when the monotone best loss has not improved by more than
+            # `tol` (relative) across the whole window. Immune to jitter.
+            if len(self._best_hist) > self.window:
+                old = self._best_hist[0]
+                gain = (old - self.best_loss) / max(abs(old), 1e-12)
+                if gain < self.tol and epoch + 1 >= self.min_epochs:
+                    self.triggered = True
+                    self.trigger_epoch = epoch
+            return self.triggered
 
         if self.prev_loss is not None:
-            # Threshold depends on mode: absolute (A3's rule) or relative to the
-            # best loss so far, which is scale-free. See __init__ for the
-            # measured traces that justify the split between tasks.
             thr = self.tol if self.mode == "abs" else self.tol * abs(self.best_loss)
             if abs(loss - self.prev_loss) < thr:
                 self.streak += 1
@@ -323,7 +439,8 @@ def train_classifier(model, data, arch_name="arch", tracker=None,
     stopped_early = False
     # Classifiers: A3-mandated ABSOLUTE tolerance. Cross-entropy starts near 1.6,
     # so 1e-4 is a genuine 0.006% - the literal inherited rule is appropriate.
-    watch = _ConvergenceWatch(tol=tol, patience=patience, mode="abs")
+    watch = _ConvergenceWatch(tol=tol, patience=patience, mode="abs",
+                             min_epochs=0)
     # Restore the patience streak from the checkpoint. Without this, a resumed run
     # restarts the counter at zero and can stop EARLIER than the criterion
     # intends, which silently changes results depending on where a crash fell.
@@ -401,8 +518,19 @@ def train_classifier(model, data, arch_name="arch", tracker=None,
             f"vanishing-gradient note in train.flag_degenerate. Excluded "
             f"from best-architecture selection.")
     if tracker is not None:
-        tracker.finish(status=state, val_acc=final_val, lr=lr,
-                       epochs_run=epoch + 1 - start_epoch)
+        # model/optimizer are passed so finish() writes the FINAL weights: without
+        # this the checkpoint trails the reported metrics by up to CHECKPOINT_EVERY-1
+        # epochs and cannot be used to verify the results.
+        # `extra` carries the identity metadata the periodic save wrote - arch
+        # name, lr and the convergence watch state. Without it the final
+        # checkpoint loses run_name/lr/watch_state that the periodic saves had,
+        # so a resume after the last save would lose the plateau window and the
+        # convergence streak.
+        tracker.finish(status=state, model=model, optimizer=optimizer,
+                        extra={"arch_name": arch_name, "lr": lr},
+                        watch=watch,
+                        val_acc=final_val,
+                        epochs_run=epoch + 1 - start_epoch)
 
     return {
         "arch_name": arch_name,
@@ -434,6 +562,48 @@ def reconstruct_error(model, X, batch_size=4096):
             total += ((xb - rec) ** 2).mean(dim=1).sum().item()
             n += xb.size(0)
     return total / max(1, n)
+
+
+@torch.no_grad()
+def denoising_error(model, X, noise_level, batch_size=4096, seed=1234,
+                    copy_baseline=False):
+    """
+    Reconstruction error when the model is fed CORRUPTED input, against the CLEAN
+    target - the metric that actually measures denoising.
+
+    `reconstruct_error` feeds clean images, which for a denoising autoencoder is
+    the wrong quantity: it reports how good a plain autoencoder the denoising
+    objective happened to produce, not how much noise the model removes.
+
+    `copy_baseline=True` additionally returns the error of simply passing the
+    corrupted image through unchanged. Without that reference, "did it denoise?"
+    is unanswerable, because a low error could equally mean the input was
+    barely corrupted. Measured on the shipped models it beats the copy baseline
+    by ~40.6% at 20% noise and ~61.1% at 40%, which is the claim the report needs.
+    (An earlier draft of this docstring said ~43%/~63%; those figures were wrong.
+    The percentages are computed from denoise_error["test"] in the result JSONs
+    rather than quoted by hand, so they can always be re-derived from the
+    artifacts.)
+
+    seeded so the reported figure is reproducible.
+    """
+    model.eval()
+    total, n = 0.0, 0
+    base_total = 0.0
+    for i in range(0, X.size(0), batch_size):
+        xb = X[i:i + batch_size]
+        # A fixed generator per call batch keeps the corruption identical across
+        # calls for a given split.
+        g = torch.Generator(device=X.device).manual_seed(seed + i)
+        noisy = make_noise(xb, noise_level, g)
+        total += ((model(noisy) - xb) ** 2).mean(dim=1).sum().item()
+        if copy_baseline:
+            base_total += ((noisy - xb) ** 2).mean(dim=1).sum().item()
+        n += xb.size(0)
+    err = total / max(1, n)
+    if not copy_baseline:
+        return err
+    return err, base_total / max(1, n)
 
 
 @torch.no_grad()
@@ -534,7 +704,8 @@ def train_autoencoder(model, data, run_name="ae", tracker=None,
     # Autoencoders: RELATIVE tolerance (1e-3 of the best loss seen). The absolute
     # rule measurably fires ~8x too early on MSE — see _ConvergenceWatch.__init__
     # for the replayed 1500-epoch traces that justify this.
-    watch = _ConvergenceWatch(tol=AE_REL_TOL, patience=patience, mode="rel")
+    watch = _ConvergenceWatch(tol=AE_REL_TOL, patience=patience, mode="plateau",
+                             window=AE_PLATEAU_WINDOW, min_epochs=0)
     # Restore the patience streak; see train_classifier for why.
     if resume and tracker is not None and tracker.has_checkpoint():
         _ck = torch.load(tracker.ckpt_path, map_location="cpu",
@@ -575,9 +746,20 @@ def train_autoencoder(model, data, run_name="ae", tracker=None,
         if watch.update(loss_val, epoch):
             stopped_early = True
             if tracker is not None:
-                tracker.log(
-                    f"CONVERGED {run_name} at epoch {epoch + 1} "
-                    f"(|dL| < {tol:g} for {patience} consecutive epochs)")
+                # Report the rule that ACTUALLY ran. Previously the AE logs and
+                # every AE figure printed the module-level absolute TOL while the
+                # autoencoders were using a relative threshold ~10x tighter, so
+                # the convergence claim understated the strictness by an order of
+                # magnitude.
+                if watch.mode == "plateau":
+                    rule = (f"best loss improved < {100 * watch.tol:.3g}% "
+                            f"over {watch.window} epochs")
+                elif watch.mode == "rel":
+                    rule = f"|dL| < {watch.tol:g} * |best L|"
+                else:
+                    rule = f"|dL| < {watch.tol:g}"
+                tracker.log(f"CONVERGED {run_name} at epoch {epoch + 1} "
+                            f"({rule})")
             break
 
     # Post-training reconstruction error on all three splits, as A4 Task-2c
@@ -586,12 +768,37 @@ def train_autoencoder(model, data, run_name="ae", tracker=None,
         split: reconstruct_error(model, data[f"X_{split}"])
         for split in ("train", "val", "test")
     }
+    # For the DENOISING AE only, also report the corrupted-input error and the
+    # copy-the-input baseline. The clean-input number above is what A4's generic
+    # "average reconstruction errors" asks for and is what the tables show, but on
+    # its own it does not measure denoising - it measures how good a plain
+    # autoencoder the denoising objective happened to produce.
+    denoise = None
+    if noise_level > 0:
+        denoise = {
+            split: dict(zip(
+                ("corrupted_input_error", "copy_baseline"),
+                denoising_error(model, data[f"X_{split}"], noise_level,
+                                copy_baseline=True)))
+            for split in ("train", "val", "test")
+        }
     state = "converged" if stopped_early else "max_epochs"
     if tracker is not None:
-        tracker.finish(status=state,
-                       train_recon=recon["train"], val_recon=recon["val"],
-                       test_recon=recon["test"], lr=lr, noise=noise_level,
-                       epochs_run=epoch + 1 - start_epoch)
+        metrics = {"train_recon": recon["train"], "val_recon": recon["val"],
+                   "test_recon": recon["test"], "lr": lr,
+                   "noise": noise_level,
+                   "epochs_run": epoch + 1 - start_epoch}
+        if denoise is not None:
+            metrics["test_denoise_err"] = \
+                denoise["test"]["corrupted_input_error"]
+            metrics["test_copy_baseline"] = denoise["test"]["copy_baseline"]
+        # As for the classifier: save the FINAL weights so the checkpoint on disk
+        # is exactly the model these metrics describe, carrying the same identity
+        # metadata (run name, lr, noise, watch state) the periodic save wrote.
+        tracker.finish(status=state, model=model, optimizer=optimizer,
+                       extra={"run_name": run_name, "lr": lr,
+                              "noise_level": noise_level},
+                       watch=watch, **metrics)
 
     return {
         "run_name": run_name,
@@ -599,7 +806,10 @@ def train_autoencoder(model, data, run_name="ae", tracker=None,
         "noise_level": noise_level,
         "history": tracker.history if tracker else [],
         "recon_error": recon,
+        "denoise_error": denoise,
         "stopped_early": stopped_early,
         "epochs_run": epoch + 1 - start_epoch,
+        "stopping_rule": {"mode": watch.mode, "tol": watch.tol,
+                          "window": watch.window, "patience": watch.patience},
         "model_state": {k: v.detach().clone() for k, v in model.state_dict().items()},
     }
