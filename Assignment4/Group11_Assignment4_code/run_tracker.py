@@ -38,23 +38,10 @@ from collections import deque
 
 import torch
 
-# Checkpoint cadence. 10 epochs is frequent enough that a crash costs at most
-# 10 epochs of work, and cheap enough to be irrelevant next to a 10k-epoch run.
-# Deliberately NOT every epoch: a checkpoint for the heavy autoencoders
-# (784 -> 400 -> k -> 400 -> 784) is megabytes, so per-epoch saving means
-# hundreds of MB of pointless writes over a long run. Raise this per-run if
-# epochs are slow enough that 10 is still a meaningful loss of work.
 CHECKPOINT_EVERY = 10
 
-# Status-JSON refresh cadence, in epochs. The status file is a tiny overwrite,
-# so it is cheap - but there is no reason to touch disk every epoch on ~40 runs.
-# Kept aligned with CHECKPOINT_EVERY so status and checkpoint never disagree
-# about where a run had reached when it was interrupted.
 STATUS_EVERY = 10
 
-# Rolling window for the rate estimate, in epochs.
-# Long enough to smooth per-epoch jitter, short enough to react to throttling
-# within a few minutes.
 RATE_WINDOW = 50
 
 
@@ -110,9 +97,6 @@ class RunTracker:
         self.outdir = outdir
         ensure_dirs(outdir)
 
-        # Per-run cadence override. Defaults are module-level, but a slow run
-        # (heavy autoencoder, throttled GPU) may want a wider checkpoint interval
-        # because there the write cost is dominated by epoch time, not disk I/O.
         self.checkpoint_every = max(1, int(checkpoint_every))
         self.status_every = max(1, int(status_every))
 
@@ -122,19 +106,16 @@ class RunTracker:
 
         self.total_epochs = total_epochs
 
-        # Reused across resume: a resumed run must not reset its clock, or the
-        # ETA restarts from zero every time the process is restarted.
         self.start_time = time.time()
         self.first_epoch_time = self.start_time
 
-        self.recent = deque(maxlen=RATE_WINDOW)  # (timestamp, epoch) pairs
+        self.recent = deque(maxlen=RATE_WINDOW)
         self.history = []
         self.done = False
         self.final_status = None
 
         self.log_fh = open(self.log_path, "a", encoding="utf-8", buffering=1)
 
-    # ── logging ──────────────────────────────────────────────────────────
 
     def log(self, msg):
         """Human-readable line, timestamped, flushed immediately."""
@@ -162,7 +143,6 @@ class RunTracker:
             return ckpt
         return None
 
-    # ── progress ─────────────────────────────────────────────────────────
 
     def _rate(self):
         """
@@ -213,10 +193,6 @@ class RunTracker:
 
         self.log("PROGRESS " + " ".join(parts))
 
-        # Status JSON is throttled to STATUS_EVERY epochs, not written every
-        # epoch. The PROGRESS line above is still per-epoch because it is a
-        # cheap append to a text file, whereas the JSON is an overwrite that we
-        # have no reason to touch every iteration across ~40 concurrent runs.
         if epoch % self.status_every == 0 or epoch == 0:
             self._write_status(epoch, metrics, rate, eta, "running")
 
@@ -239,7 +215,6 @@ class RunTracker:
         }
         atomic_write_text(json.dumps(snap, indent=2), self.status_path)
 
-    # ── checkpointing ────────────────────────────────────────────────────
 
     def check(self, epoch, model=None, optimizer=None, extra=None):
         """

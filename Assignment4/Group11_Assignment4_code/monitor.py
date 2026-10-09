@@ -35,7 +35,6 @@ from run_tracker import format_duration
 
 DEFAULT_OUTDIR = "results"
 
-# Ordered by pipeline position so the display reads in execution order.
 STATE_ORDER = {"running": 0, "checkpointed": 1, "converged": 2,
                "max_epochs": 3, "failed": 4, "skipped": 5}
 
@@ -54,8 +53,6 @@ def read_statuses(outdir):
             with open(path, encoding="utf-8") as fh:
                 statuses.append(json.load(fh))
         except (json.JSONDecodeError, OSError):
-            # A .json.tmp mid-replace can land here; atomic writes mean it is
-            # transient, so just count it rather than erroring out.
             bad += 1
     return statuses, bad
 
@@ -107,8 +104,6 @@ def fmt_row(s):
     rate = s.get("rate_ep_s")
     rate_s = f"{rate:.3f}" if rate else "-"
     alive = proc_alive(s.get("pid"))
-    # A snapshot says "running" but the process is gone => crashed or killed
-    # since the last epoch. Surfacing this is the monitor's main value-add.
     mark = "" if alive is None or alive else "  <-- PROCESS GONE"
     m = s.get("metrics") or {}
     extra = ""
@@ -160,7 +155,6 @@ def render(outdir, show_gpu, verbose):
             print(f"GPU: {g['temp']}C  util {g['util']}%  "
                   f"mem {g['mem_used']}/{g['mem_total']} MiB ({mem_pct:.0f}%)  "
                   f"power {g['power']} W")
-            # Throttling is the failure mode that silently inflates a long run.
             if g["temp"] >= 85:
                 print("  WARNING: GPU at/above 85C — expect throttling. "
                       "ETAs will lengthen. Consider cleaning vents.")
@@ -171,8 +165,6 @@ def render(outdir, show_gpu, verbose):
 def watch(outdir, show_gpu, interval):
     try:
         while True:
-            # Clear screen when attached to a TTY; plain scroll when piped to
-            # a file, so redirecting this to a log stays readable.
             if sys.stdout.isatty():
                 print("\033[2J\033[H", end="")
             render(outdir, show_gpu, verbose=False)

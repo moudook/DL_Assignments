@@ -63,40 +63,22 @@ class PCA:
         X_train: (N, 784) float32 on any device.
         Returns self.
         """
-        # Keep the accumulation in fp32 explicitly. X is already fp32, but
-        # pin the dtype so an accidental upstream cast cannot silently change
-        # the covariance precision.
         X = X_train.to(torch.float32)
         self.mean = X.mean(dim=0)
 
-        # Center in place on a copy so X_train is never mutated: the caller
-        # reuses X_train for raw-input baselines and autoencoder training, and
-        # an in-place subtract here would silently corrupt those.
         Xc = X - self.mean
 
-        # Unbiased sample covariance. Symmetrize before eigh: the Gram matrix is
-        # symmetric in exact arithmetic, but floating-point accumulation can leave
-        # it minutely asymmetric, and eigh reads only one triangle. Symmetrizing
-        # makes the input exactly symmetric and the result well-defined.
         N = Xc.size(0)
         C = (Xc.T @ Xc) / (N - 1)
         C = 0.5 * (C + C.T)
 
-        # eigh returns ascending eigenvalues with eigenvectors as columns.
-        # Run on the CPU: cuSOLVER's syevd is not guaranteed bitwise identical
-        # across driver versions, and the whole decomposition is ~1-2 s on 784x784.
-        # Determinism here matters more than the speed, since the reported
-        # variance-retained figures must be reproducible.
         eigenvalues, eigenvectors = torch.linalg.eigh(C.cpu())
 
-        # Descending order: largest variance first, so the first k columns are the
-        # top-k principal directions.
         order = torch.argsort(eigenvalues, descending=True)
         self.eigenvalues = eigenvalues[order].contiguous()
         self.components = eigenvectors[:, order].contiguous()
         self.total_variance = self.eigenvalues.sum()
 
-        # Back to the caller's device so projections run where the data lives.
         self.mean = self.mean.to(X.device)
         self.eigenvalues = self.eigenvalues.to(X.device)
         self.components = self.components.to(X.device)

@@ -29,9 +29,6 @@ import os
 import torch
 from torchvision import datasets, transforms
 
-# Alphabetical ImageFolder order over dirs {'0','4','5','6','7'}, so index i maps
-# to digit CLASS_NAMES[i]. Matches Assignment-3's label convention exactly, which
-# keeps confusion matrices and result tables comparable with the A3 baseline.
 CLASS_NAMES = ["0", "4", "5", "6", "7"]
 NUM_CLASSES = len(CLASS_NAMES)
 INPUT_DIM = 784
@@ -47,8 +44,8 @@ class FlattenTransform:
 
 def _transform():
     return transforms.Compose([
-        transforms.Grayscale(),   # guarantee 1 channel
-        transforms.ToTensor(),    # scale [0,255] -> [0,1]
+        transforms.Grayscale(),
+        transforms.ToTensor(),
         FlattenTransform(),
     ])
 
@@ -111,8 +108,6 @@ def load_splits(data_dir="Group_11", device=None, seed=42):
     split_tensors = {}
     for split in ("train", "val", "test"):
         ds = datasets.ImageFolder(root=os.path.join(root, split), transform=tf)
-        # shuffle=False: evaluation splits must stay in folder order so predicted
-        # and true indices align row-for-row with the class subfolder listing.
         loader = torch.utils.data.DataLoader(
             ds, batch_size=len(ds), shuffle=False,
             num_workers=0, pin_memory=pin,

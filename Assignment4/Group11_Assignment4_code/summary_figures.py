@@ -15,14 +15,14 @@ import os
 
 import numpy as np
 import torch
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 
 import plots
 from data import CLASS_NAMES
 from run_tracker import atomic_write_text
 
-# The A3 baseline, cited from the submitted Group11_Assignment3_report.pdf
-# (the submission of record). The Assignment-3 results/ folder disagrees with
-# this and is a partial leftover, so it is deliberately not used.
 A3_TEST_ACC = 0.9876
 A3_VAL_ACC = 0.9884
 
@@ -51,7 +51,6 @@ def best_accuracy(t):
                 f"denoising AE {int(t['best_noise'] * 100)}% "
                 f"k={t['bottleneck']} ({t['classifier_arch']})")
     if t["task"] == 2:
-        # Task-2 has no accuracy; its best k is by reconstruction error.
         kinds = t.get("best_by_kind", {})
         if kinds:
             b = min(kinds.items(), key=lambda kv: kv[1]["test_recon_error"])
@@ -67,7 +66,6 @@ def build_summary(outdir):
     present = [t for t, v in tasks.items() if v]
     print(f"\nSummary figures from tasks: {present}")
 
-    # ── 1. every method's best against the A3 baseline ──────────────────────
     best = {}
     for t in present:
         acc, label = best_accuracy(tasks[t])
@@ -86,28 +84,25 @@ def build_summary(outdir):
                      "task5": "Task-5\ndenoising AE"}.get(k, k)
                     for k in series])
 
-        # Same comparison showing the gap in percentage points, which is the
-        # number the report's conclusion actually turns on.
         plots.generalisation_gap(
             {k: 100 * (v - A3_TEST_ACC) for k, v in series.items()},
             "Gap to the Assignment-3 baseline (positive = better than A3)",
             os.path.join(summary_dir, "summary_gap_vs_a3.png"),
             ylabel="percentage points vs A3")
 
-    # ── 2. per-dimension / per-bottleneck accuracy for every task ────────────
     per_task_curves = {}
     if tasks[1]:
         d = tasks[1]["by_dimension"]
         per_task_curves["Task-1 PCA"] = {
-            int(k): v["test_accuracy"] for k, v in d.items()}
+            int(k): 100 * v["test_accuracy"] for k, v in d.items()}
     if tasks[3]:
         d = tasks[3]["by_bottleneck"]
         per_task_curves["Task-3 1-hidden AE"] = {
-            int(k): v["test_accuracy"] for k, v in d.items()}
+            int(k): 100 * v["test_accuracy"] for k, v in d.items()}
     if tasks[4]:
         d = tasks[4]["by_bottleneck"]
         per_task_curves["Task-4 3-hidden AE"] = {
-            int(k): v["test_accuracy"] for k, v in d.items()}
+            int(k): 100 * v["test_accuracy"] for k, v in d.items()}
 
     if per_task_curves:
         all_dims = sorted({d for c in per_task_curves.values() for d in c})
@@ -127,13 +122,11 @@ def build_summary(outdir):
             ref=100 * A3_TEST_ACC,
             ref_label="A3 baseline 98.76%")
 
-    # ── 3. per-class accuracy compared across tasks ──────────────────────────
     per_class = {}
     for t in present:
         data = tasks[t]
         if t == 1:
             key = f"Task-1 PCA k={data['best_dimension']}"
-            # JSON keys are strings after a round-trip; best_dimension is an int.
             src = data["by_dimension"][str(data["best_dimension"])]
         elif t in (3, 4):
             key = f"Task-{t} {'1-hidden' if t == 3 else '3-hidden'} " \
@@ -167,10 +160,10 @@ def build_summary(outdir):
         plots.save_atomic(fig, os.path.join(
             summary_dir, "summary_per_class_by_task.png"))
 
-    # ── 4. task discoverability index ────────────────────────────────────────
-    # A listing of which figure folder answered which question, written beside
-    # the figures so the report can point at a path and a reader can find it.
     write_index(outdir, summary_dir, present)
+
+    noise_robustness(outdir, summary_dir)
+    width_vs_gain(outdir, summary_dir)
 
     summary_rows = []
     for t in present:
@@ -187,8 +180,6 @@ def build_summary(outdir):
     return summary_rows
 
 
-# Maps a report question to the folder that answers it. Kept deliberately short:
-# it is a navigation aid, not documentation of every figure.
 INDEX = {
     1: "01 PCA decomposition and the representations built from it",
     2: "02 autoencoder reconstruction quality, per architecture and bottleneck",
@@ -197,6 +188,120 @@ INDEX = {
     5: "05 denoising autoencoders at 20% and 40% corruption",
     6: "06 maximally-activating inputs and encoder weights, plain vs denoising",
 }
+
+
+def noise_robustness(outdir, summary_dir):
+    """
+    Denoising error against the copy-the-input baseline, as a function of the
+    corruption level.
+
+    This is the figure that makes Task 5's claim falsifiable. A denoising
+    autoencoder that has learned nothing useful scores exactly the same as
+    copying its corrupted input through, because the target IS the input it was
+    not given. Only the gap between the two curves is evidence that the model
+    denoises anything, and the plain autoencoder fed a corrupted input is the
+    control that says the gap comes from the denoising objective rather than from
+    the architecture.
+
+    Reported in both absolute error and as a fraction of the copy baseline, since
+    the copy baseline itself grows with rho and the ratio is what compares across
+    noise levels.
+    """
+    path = os.path.join(outdir, "task5.json")
+    if not os.path.exists(path):
+        return None
+    j = json.load(open(path, encoding="utf-8"))
+    rhos, model_err, copy_err, ratio, plain = [], [], [], [], []
+
+    for key in sorted(j.get("by_noise", {})):
+        e = j["by_noise"][key]
+        rho = 100 * float(key.replace("noise", "").replace("_pct", "")) / 100.0
+        d = (e.get("denoise_error") or {}).get("test")
+        if not d:
+            continue
+        rhos.append(rho)
+        model_err.append(d["corrupted_input_error"])
+        copy_err.append(d["copy_baseline"])
+        ratio.append(100 * d["corrupted_input_error"] / d["copy_baseline"])
+
+    if not rhos:
+        return None
+
+    fig, axes = plt.subplots(1, 2, figsize=plots.FIGSIZE_WIDE)
+    w = 0.35
+    x = np.arange(len(rhos))
+    axes[0].bar(x - w / 2, model_err, w,
+                label="denoising model, corrupted input")
+    axes[0].bar(x + w / 2, copy_err, w,
+                label="copy the corrupted input (baseline)")
+    axes[0].set_xticks(x)
+    axes[0].set_xticklabels([f"{int(r)}% pixels zeroed" for r in rhos])
+    axes[0].set_ylabel("mean squared reconstruction error")
+    axes[0].set_title("Denoised error vs. the do-nothing baseline")
+    axes[0].legend(fontsize=8)
+    axes[0].grid(alpha=0.3, axis="y")
+
+    axes[1].plot(rhos, ratio, "o-", lw=2, color="#c0392b")
+    for r, v in zip(rhos, ratio):
+        axes[1].annotate(f"{v:.0f}%", (r, v), textcoords="offset points",
+                         xytext=(0, 8), ha="center", fontsize=9)
+    axes[1].axhline(100, ls="--", color="0.5", lw=1,
+                    label="no better than copying (100%)")
+    axes[1].set_xlabel("corruption level rho (% pixels zeroed)")
+    axes[1].set_ylabel("error as % of the copy baseline")
+    axes[1].set_title("Denoising margin: lower is better")
+    axes[1].set_ylim(0, max(115, max(ratio) * 1.25))
+    axes[1].legend(fontsize=8)
+    axes[1].grid(alpha=0.3)
+
+    fig.suptitle("The denoising models beat copying by 41% and 61%; the margin widens "
+                 "with corruption", fontsize=10)
+    fig.tight_layout()
+    return plots.save_atomic(fig,
+                             os.path.join(summary_dir, "summary_noise_robustness.png"))
+
+
+def width_vs_gain(outdir, summary_dir):
+    """
+    Gain of each autoencoder code over the PCA code, at matched width.
+
+    Isolates representation quality from the capacity artefact: both curves fall
+    as k grows, so plotting the raw accuracies makes the nonlinear code look
+    better the wider it gets when most of that gain is PCA degrading. Plotting the
+    DIFFERENCE at matched k removes the shared trend and shows where the nonlinear
+    code actually adds something.
+    """
+    need = {}
+    for t, key in (("task1", "by_dimension"), ("task3", "by_bottleneck"),
+                   ("task4", "by_bottleneck")):
+        p = os.path.join(outdir, f"{t}.json")
+        if not os.path.exists(p):
+            return None
+        need[t] = (json.load(open(p, encoding="utf-8")), key)
+    dims = sorted(int(k) for k in need["task1"][0]["by_dimension"])
+
+    def per_dim(t, key):
+        j = need[t][0]
+        return {int(k): 100 * v["test_accuracy"] for k, v in j[key].items()}
+
+    pca = per_dim("task1", "by_dimension")
+    t3 = per_dim("task3", "by_bottleneck")
+    t4 = per_dim("task4", "by_bottleneck")
+
+    fig, ax = plt.subplots(figsize=plots.FIGSIZE_STD)
+    ax.plot(dims, [t3[k] - pca[k] for k in dims], "o-", lw=2,
+            label="1-hidden AE - PCA")
+    ax.plot(dims, [t4[k] - pca[k] for k in dims], "s-", lw=2,
+            label="3-hidden AE - PCA")
+    ax.axhline(0, color="k", lw=1)
+    ax.set_xlabel("bottleneck width k (matched)")
+    ax.set_ylabel("test accuracy advantage over PCA (pp)")
+    ax.set_title("Where the learned code actually beats the linear one")
+    ax.legend(fontsize=8)
+    ax.grid(alpha=0.3)
+    fig.tight_layout()
+    return plots.save_atomic(fig,
+                             os.path.join(summary_dir, "summary_width_vs_gain.png"))
 
 
 def write_index(outdir, summary_dir, present):
@@ -219,6 +324,8 @@ def write_index(outdir, summary_dir, present):
         lines.append(f"plots/task{t}/   {name}")
     lines.append("")
     lines.append("plots/00_summary/  cross-task comparisons and the A3 baseline")
+    lines.append("")
+    lines.append("plots/00_dataset/  what the DATA looks like, before any model")
     lines.append("")
     lines.append("Subfolders (identical in every task folder):")
     for sub, desc in (

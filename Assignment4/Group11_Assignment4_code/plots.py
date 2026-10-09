@@ -30,23 +30,17 @@ Plus analytical figures built from results tables:
 import os
 
 import matplotlib
-matplotlib.use("Agg")   # headless: no display on a background runner
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
 
 from data import CLASS_NAMES
 
-# A4 requires deep visual analysis of every figure, which needs legible output.
-# These sizes are chosen so a single figure fills a reasonable block of an A4
-# report page without becoming unreadable when scaled.
 FIGSIZE_STD = (7, 5)
 FIGSIZE_WIDE = (11, 4.5)
 DPI = 150
 
-# Consistent palette across the report so series keep their identity between
-# figures. "colorblind" keeps the 5-class confusion matrix readable for the most
-# common forms of colour vision deficiency.
 PALETTE = "colorblind"
 
 
@@ -125,7 +119,6 @@ def prune_empty_dirs(outdir):
         if rel == ".":
             continue
         depth = rel.count(os.sep)
-        # Keep task roots (depth 0) and 00_summary; only prune deeper subfolders.
         if depth == 0:
             continue
         if not dirnames and not filenames:
@@ -152,8 +145,6 @@ def _axes_off(ax):
     ax.set_xticks([])
     ax.set_yticks([])
 
-
-# ── additional primitives (exhaustive figure set) ─────────────────────────
 
 def accuracy_curve(history, title, save_path, ylabel="accuracy (%)",
                    train_key="train_acc", val_key="val_acc"):
@@ -189,8 +180,6 @@ def loss_and_accuracy(history, title, save_path, tol=1e-4):
     Exported for every run so no figure needs a re-run to produce later.
     """
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(7, 6.5), sharex=True)
-    # A resumed run can legitimately have no history if it did zero epochs and
-    # the caller passed an empty list; indexing history[0] would then raise.
     if not history:
         ax1.text(0.5, 0.5, "no training history", ha="center", va="center")
         ax1.set_title(title)
@@ -198,8 +187,6 @@ def loss_and_accuracy(history, title, save_path, tol=1e-4):
     eps = [h["epoch"] for h in history]
     loss = [h.get("loss", float("nan")) for h in history]
     finite = [v for v in loss if np.isfinite(v)]
-    # Log scale only when the dynamic range justifies it; linear is better when
-    # loss barely moves, which is itself a finding worth seeing plainly.
     if finite and max(finite) / max(min(finite), 1e-12) > 20:
         ax1.set_yscale("log")
     ax1.plot(eps, loss, lw=1.3, label="training loss")
@@ -234,7 +221,6 @@ def per_class_accuracy(per_class, title, save_path, ylim=(0, 100)):
     accs = [100 * p["accuracy"] for p in per_class]
     bars = ax.bar(labels, accs, color="tab:blue")
     best, worst = int(np.argmax(accs)), int(np.argmin(accs))
-    # Mark the extremes; comparing five bars by eye is error-prone.
     bars[best].set_color("tab:green")
     bars[worst].set_color("tab:red")
     for b, a, p in zip(bars, accs, per_class):
@@ -272,7 +258,6 @@ def accuracy_heatmap(rows, cols, values, title, save_path,
     fig.tight_layout()
     return save_atomic(fig, save_path)
 
-# ── reconstruction grids (Task-2d, Task-5c) ────────────────────────────────
 
 def reconstruction_grid(originals, reconstructions, labels, title,
                         save_path, ncols=None):
@@ -293,18 +278,11 @@ def reconstruction_grid(originals, reconstructions, labels, title,
     nrows = 2
     fig, axes = plt.subplots(nrows, ncols,
                              figsize=(ncols * 1.5, nrows * 1.7 + 0.4))
-    # Force a strict (nrows, ncols) view. np.atleast_2d only ADDS a leading
-    # axis when one is missing, so with ncols == 1 the (2,) array becomes (1,2)
-    # and indexing axes[1, i] is out of bounds. reshape always yields the 2-D
-    # shape the loops below assume, for any width.
     axes = np.asarray(axes, dtype=object).reshape(nrows, ncols)
 
     for i in range(n):
         axes[0, i].imshow(originals[i], cmap="gray", vmin=0, vmax=1)
         axes[1, i].imshow(reconstructions[i], cmap="gray", vmin=0, vmax=1)
-        # shared colour scale across the whole grid: a per-image autoscale would
-        # make a blurry reconstruction look as contrasty as a sharp original and
-        # hide exactly the degradation this figure exists to show.
         _axes_off(axes[0, i])
         _axes_off(axes[1, i])
         if i < len(labels):
@@ -316,8 +294,6 @@ def reconstruction_grid(originals, reconstructions, labels, title,
     fig.tight_layout()
     return save_atomic(fig, save_path)
 
-
-# ── Task-6 maximally-activating grids ───────────────────────────────────────
 
 def maxact_grid(images, weights, title, save_path, unit_labels=None):
     """
@@ -335,9 +311,6 @@ def maxact_grid(images, weights, title, save_path, unit_labels=None):
     has_w = weights is not None and len(weights) > 0
     nrows = 2 if has_w else 1
     fig, axes = plt.subplots(nrows, n, figsize=(n * 1.05, nrows * 1.25 + 0.5))
-    # reshape (not atleast_2d): with a single column atleast_2d turns a (rows,)
-    # array into (1, rows), which then indexes wrongly. reshape always gives the
-    # 2-D (nrows, ncols) view the loops below assume.
     axes = np.asarray(axes, dtype=object).reshape(nrows, -1)
 
     for i in range(n):
@@ -347,15 +320,6 @@ def maxact_grid(images, weights, title, save_path, unit_labels=None):
         if unit_labels is not None and i < len(unit_labels):
             axes[0, i].set_title(str(unit_labels[i]), fontsize=6)
         if has_w:
-            # Weights are signed, so use a diverging map centred on zero. A
-            # grayscale image map would show half the weights as pure black and
-            # destroy the structure Task-6 is asking us to compare.
-            #
-            # Scale to the per-figure maximum magnitude, NOT a hardcoded +-1.
-            # Encoder weights are small (Xavier init gives roughly +-0.03 on a
-            # 784-input layer), so a fixed +-1 range renders every weight as
-            # near-white and the figure shows nothing. Scaling by the observed
-            # max keeps the structure visible at any weight magnitude.
             w = np.asarray([np.asarray(x) for x in weights])
             wmax = float(np.abs(w).max())
             wmax = wmax if wmax > 0 else 1.0
@@ -370,8 +334,6 @@ def maxact_grid(images, weights, title, save_path, unit_labels=None):
     fig.tight_layout()
     return save_atomic(fig, save_path)
 
-
-# ── loss / convergence curves (selected runs only) ──────────────────────────
 
 def loss_curve(history, title, save_path, tol=1e-4, ylabel="training loss",
                val_key="val_acc", second_ylabel=None):
@@ -391,7 +353,6 @@ def loss_curve(history, title, save_path, tol=1e-4, ylabel="training loss",
     eps = [h["epoch"] for h in history]
     loss = [h.get("loss", np.nan) for h in history]
 
-    # Log scale only when the range is wide; linear reads better when it is not.
     finite = [v for v in loss if np.isfinite(v)]
     if finite and max(finite) / max(min(finite), 1e-12) > 50:
         ax.set_yscale("log")
@@ -446,8 +407,6 @@ def superimposed_curves(histories, labels, title, save_path, ylabel="loss",
     return save_atomic(fig, save_path)
 
 
-# ── comparison bars (built from result tables, nearly free) ─────────────────
-
 def dimension_bars(values_by_series, x_labels, title, save_path,
                    ylabel="accuracy (%)", ref=None, ref_label=None):
     """
@@ -456,6 +415,13 @@ def dimension_bars(values_by_series, x_labels, title, save_path,
     This is the highest-value figure per task: it is what answers A4's "observe
     the best reduced dimension", and it is built from a results table rather than
     from training, so plotting every one of them costs essentially nothing.
+
+    Each value in values_by_series may be a LIST aligned with x_labels or a MAPPING
+    keyed by x. A mapping is accepted because the summary figures naturally hold
+    {dimension: accuracy} dicts; matplotlib silently uses a dict's KEYS as the bar
+    heights if it is handed one directly, which drew this figure with heights of
+    32/64/128/256 instead of accuracies. Normalising here means a caller cannot
+    produce that by accident.
 
     ref/ref_label: optional horizontal reference line, used to show the A3
     baseline (98.76% test) or the raw-784 control, so the compressed-representation
@@ -467,7 +433,15 @@ def dimension_bars(values_by_series, x_labels, title, save_path,
     x = np.arange(n)
 
     for i, (name, vals) in enumerate(values_by_series.items()):
-        ax.bar(x + i * width - 0.4 + width / 2, vals, width, label=name)
+        if isinstance(vals, dict):
+            ys = [vals.get(lbl, vals.get(int(lbl), np.nan)) for lbl in x_labels]
+        else:
+            ys = list(vals)
+        if len(ys) != n:
+            raise ValueError(
+                "dimension_bars: series %r has %d values for %d x positions"
+                % (name, len(ys), n))
+        ax.bar(x + i * width - 0.4 + width / 2, ys, width, label=name)
 
     ax.set_xticks(x)
     ax.set_xticklabels(x_labels)
@@ -512,8 +486,6 @@ def recon_error_bars(recon_by_arch, title, save_path):
     fig.tight_layout()
     return save_atomic(fig, save_path)
 
-
-# ── confusion matrix ────────────────────────────────────────────────────────
 
 def confusion_matrix(cm, title, save_path, normalize=False):
     """
@@ -577,7 +549,6 @@ def denoise_triptych(clean, noisy, reconstructed, title, save_path):
     """
     n = len(clean)
     fig, axes = plt.subplots(3, n, figsize=(n * 1.4, 3 * 1.7))
-    # reshape (not atleast_2d): see maxact_grid. Guarantees (nrows, ncols).
     axes = np.asarray(axes, dtype=object).reshape(3, -1)
 
     for i in range(n):
@@ -705,8 +676,6 @@ def comparison_bars(series, title, save_path, ylabel="test accuracy (%)",
     return save_atomic(fig, save_path)
 
 
-# ── PCA-specific ────────────────────────────────────────────────────────────
-
 def pca_variance_curve(cum_retained, title, save_path, marks=(32, 64, 128, 256)):
     """
     Cumulative variance retained vs retained dimension.
@@ -742,11 +711,6 @@ def pca_reconstruction_grid(originals, k_recons, title, save_path):
     toward the original. This is the visual evidence behind the variance-retained
     numbers, and it is the PCA analogue of the autoencoder reconstruction grids.
     """
-    # Axes count is driven by the number of RECONSTRUCTIONS, not the number of
-    # originals: the figure is one original plus one panel per k, and those are
-    # independent counts. Sizing on len(originals) breaks whenever a caller
-    # passes a single original against several k values, which is exactly how
-    # Task-1 calls it.
     n_rec = len(k_recons)
     fig, axes = plt.subplots(1, n_rec + 1, figsize=((n_rec + 1) * 1.5, 1.9))
     axes = np.atleast_1d(axes)
@@ -777,12 +741,8 @@ def weight_image_grid(weights_2d, title, save_path, ncols=8):
     nrows = int(np.ceil(n / ncols))
     fig, axes = plt.subplots(nrows, ncols,
                              figsize=(ncols * 0.85, nrows * 0.9 + 0.4))
-    # reshape (not atleast_2d): guarantees (nrows, ncols) for any unit count,
-    # including a single row that atleast_2d would leave 1-D.
     axes = np.asarray(axes, dtype=object).reshape(nrows, -1)
     flat = axes.flatten()
-    # Per-figure symmetric scale from the observed maximum, so the structure is
-    # visible regardless of how small the trained weights are.
     wmax = float(np.abs(np.asarray([np.asarray(w) for w in weights_2d])).max())
     wmax = wmax if wmax > 0 else 1.0
     for i in range(n):

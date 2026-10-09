@@ -24,8 +24,6 @@ from data import CLASS_NAMES, NUM_CLASSES
 IMG_SIZE = 28
 
 
-# ── classification metrics ──────────────────────────────────────────────────
-
 @torch.no_grad()
 def evaluate_classifier(model, data, device=None, split="test"):
     """
@@ -49,8 +47,6 @@ def evaluate_classifier(model, data, device=None, split="test"):
     targets = y.to(preds.device)
     acc = (targets == preds).float().mean().item()
 
-    # Explicit labels list: guarantees the matrix is 5x5 with rows/cols in
-    # CLASS_NAMES order even if some class is absent from this split.
     cm = np.zeros((NUM_CLASSES, NUM_CLASSES), dtype=np.int64)
     for t, p in zip(targets.cpu().numpy(), preds.cpu().numpy()):
         cm[t, p] += 1
@@ -100,8 +96,6 @@ def most_confused(cm, top=3):
     return pairs[:top]
 
 
-# ── reconstruction figures ──────────────────────────────────────────────────
-
 def _to_grid_images(vecs):
     """
     (N, 784) float tensor -> list of N 28x28 numpy arrays, values clipped to [0,1].
@@ -140,8 +134,6 @@ def reconstruction_grid(model, data, split, indices, device=None):
     return _to_grid_images(sample), _to_grid_images(rec), list(indices)
 
 
-# ── Task-6 weight visualisation ─────────────────────────────────────────────
-
 @torch.no_grad()
 def maximally_activating(model, X, n_units=None, device=None):
     """
@@ -169,31 +161,16 @@ def maximally_activating(model, X, n_units=None, device=None):
         device = next(model.parameters()).device
     model.eval()
 
-    Z = model.encode(X)                      # (N, k)
+    Z = model.encode(X)
     k = Z.size(1) if n_units is None else min(n_units, Z.size(1))
 
     acts, inputs = [], []
     for j in range(k):
         col = Z[:, j]
-        # The bottleneck is LINEAR (A4 mandate), so activations are signed and a
-        # unit may be reliably NEGATIVE. Taking the plain argmax would then
-        # select the input that pushes a unit furthest POSITIVE, which for a
-        # negative-preferring unit is not the "maximally activating" image in any
-        # useful sense - it just reports the least-negative case.
-        #
-        # Select by largest ABSOLUTE activation instead: that is the input the
-        # unit responds to most strongly in either direction, which is what
-        # "maximally activate" means for a signed code. Weights are reported
-        # alongside activations so the report can note sign convention.
         best = int(col.abs().argmax().item())
         acts.append(float(col[best].item()))
         inputs.append(X[best].detach().cpu().numpy())
 
-    # Encoder weight rows. For the 1-hidden AE the encoder is a single
-    # Linear(784, k), so weight[j] is exactly the 784->j connection. For the
-    # 3-hidden AE the bottleneck is reached through two layers, so the effective
-    # input-layer contribution is the product W1 @ W2 row j; we still expose the
-    # first-layer rows since A4 says "input layer to the compressed layer".
     W1 = None
     for m in model.encoder.modules():
         if isinstance(m, torch.nn.Linear):
@@ -201,7 +178,7 @@ def maximally_activating(model, X, n_units=None, device=None):
             break
     if W1 is None:
         return {"inputs": inputs, "weights": [], "acts": acts, "k": k}
-    W1 = W1[:k]                             # (k, 784)
+    W1 = W1[:k]
 
     return {
         "inputs": inputs,
@@ -210,8 +187,6 @@ def maximally_activating(model, X, n_units=None, device=None):
         "k": k,
     }
 
-
-# ── report helpers ──────────────────────────────────────────────────────────
 
 def format_table(rows, headers):
     """Markdown table, for pasting into the report or a results summary."""

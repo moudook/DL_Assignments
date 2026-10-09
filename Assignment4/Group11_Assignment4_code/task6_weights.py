@@ -35,9 +35,6 @@ from models import build_autoencoder, build_denoising_autoencoder
 from run_tracker import RunTracker, atomic_write_text
 from train import train_autoencoder, MAX_EPOCHS
 
-# Cap on units shown per figure. A 256-unit grid at readable size needs several
-# pages; the full set is available via the weight_image_grid figure and the JSON,
-# so this is a legibility choice, not a data limit. All units are recorded.
 MAX_UNITS_SHOWN = 32
 
 
@@ -97,9 +94,6 @@ def run_task6(data, outdir="results", max_epochs=MAX_EPOCHS, device=None,
     """
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    # Group output under a folder per AE variant so the three required
-    # comparisons (Task-6a plain, Task-6b both denoisers, Task-6c between them)
-    # each have their own clearly-labelled directory.
     dirs = plots.task_dirs(outdir, 6)
     V = {
         "plain_ae":     ensure_dir(os.path.join(dirs["weights"], "01_plain_AE")),
@@ -119,11 +113,6 @@ def run_task6(data, outdir="results", max_epochs=MAX_EPOCHS, device=None,
     X_train = data["X_train"]
     variants = {}
 
-    # ── (a) the best plain 1-hidden AE representation ──────────────────────
-    # A supplied state is only usable if it matches the resolved bottleneck. A
-    # shape mismatch here would abort Task-6 - the final task - after hours of
-    # upstream work, so verify the shapes before trusting it and fall back to
-    # training locally instead.
     if ae_state and _state_matches(ae_state, bottleneck):
         ae = build_autoencoder("1hidden", bottleneck).to(device)
         ae.load_state_dict(ae_state)
@@ -139,7 +128,6 @@ def run_task6(data, outdir="results", max_epochs=MAX_EPOCHS, device=None,
                           max_epochs=max_epochs, device=device)
     variants["plain_ae"] = (ae, f"1-hidden AE (no noise), k={bottleneck}")
 
-    # ── (b) both denoising AEs ────────────────────────────────────────────
     for noise in noise_levels:
         tag = f"denoise{int(noise * 100)}"
         key = f"noise{int(noise * 100)}"
@@ -182,8 +170,6 @@ def run_task6(data, outdir="results", max_epochs=MAX_EPOCHS, device=None,
         ma = maximally_activating(model, X_train)
         n_show = results["units_shown"]
 
-        # Every Task-6 variant gets the same three figure types, so 6a, 6b and
-        # 6c are directly comparable by eye rather than differing in layout.
         p_pairs = plots.maxact_grid(
             ma["inputs"][:n_show], ma["weights"][:n_show],
             f"{title} — max-activating input and encoder weight",
@@ -199,8 +185,6 @@ def run_task6(data, outdir="results", max_epochs=MAX_EPOCHS, device=None,
             ma["weights"], f"{title} — encoder weights, all {len(ma['weights'])} units",
             os.path.join(V[key], f"task6_{key}_weight_grid.png"))
 
-        # Distribution of the activations and weights: the per-unit grids show
-        # individuals, these show whether the code is being used fully.
         plots.activation_histogram(
             ma["acts"], f"{title} — distribution of max activation per unit",
             os.path.join(V[key], f"task6_{key}_activation_hist.png"),
@@ -220,20 +204,12 @@ def run_task6(data, outdir="results", max_epochs=MAX_EPOCHS, device=None,
             "n_negative_units": sum(1 for a in acts if a < 0),
             "figures": {"pairs": p_pairs, "inputs": p_inputs,
                         "weights_grid": p_weights},
-            # Weight vectors are NOT stored inline. k units x 784 floats is
-            # ~100 KB per variant as JSON, which bloated task6.json to several MB
-            # and made it unreadable. The weights are fully recoverable from the
-            # variant's checkpoint plus the fixed selection rule, and the figures
-            # already record them, so the JSON keeps only the statistics.
             "weights_recoverable_from": "trained autoencoder checkpoint",
         }
         n_neg = results["variants"][key]["n_negative_units"]
         print(f"    units shown: {n_show}/{ma['k']}   "
               f"negative-responding units: {n_neg}")
 
-    # ── (c) comparison across the three variants ───────────────────────────
-    # Side-by-side per-unit activation magnitude: makes the claim in (c)
-    # quantitative rather than only visual.
     keys = list(results["variants"])
     if len(keys) >= 2:
         plot_keys = keys[:3]
@@ -243,9 +219,6 @@ def run_task6(data, outdir="results", max_epochs=MAX_EPOCHS, device=None,
             cmp_dir, "task6c_comparison_activation_by_unit.png"))
         results["comparison_figure"] = p_cmp
 
-        # Numeric summary of the same comparison, for the report's prose: this is
-        # what lets the comparison in Task-6c be argued quantitatively rather
-        # than only asserted from looking at the grids.
         summary = {}
         for k in keys:
             a = np.abs(results["variants"][k]["activations"])
@@ -260,8 +233,6 @@ def run_task6(data, outdir="results", max_epochs=MAX_EPOCHS, device=None,
             print(f"    {k:<12} mean={v['mean_abs_activation']:.3f}  "
                   f"max={v['max_abs_activation']:.3f}")
 
-        # Mean and max activation side by side per variant: quantifies the
-        # "which variant responds most strongly" comparison as one bar pair.
         plots.comparison_bars(
             {k: summary[k]["mean_abs_activation"] for k in keys},
             "Task-6c: mean |activation| per bottleneck unit, plain vs denoising",
@@ -274,7 +245,6 @@ def run_task6(data, outdir="results", max_epochs=MAX_EPOCHS, device=None,
             os.path.join(cmp_dir, "task6c_max_activation_by_variant.png"),
             ylabel="max |activation|",
             labels=[results["variants"][k]["title"] for k in keys])
-        # How many units respond in each direction, per variant.
         plots.comparison_bars(
             {k: results["variants"][k]["n_negative_units"] for k in keys},
             "Task-6c: units whose strongest response is negative",

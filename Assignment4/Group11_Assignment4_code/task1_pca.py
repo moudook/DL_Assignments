@@ -35,11 +35,8 @@ from run_tracker import RunTracker, atomic_write_text, thin_history
 from train import (train_classifier, selection_bias_report, MAX_EPOCHS,
                     CLASSIFIER_LR, TOL)
 
-# The four reduced dimensions A4 mandates.
 DIMENSIONS = [32, 64, 128, 256]
 
-# A3 baseline, from the submitted Group11_Assignment3_report.pdf (submission of
-# record). Recorded here so the comparison table in the report is reproducible.
 A3_VAL_ACC = 0.9884
 A3_TEST_ACC = 0.9876
 
@@ -75,29 +72,18 @@ def run_task1(data, outdir="results", dims=DIMENSIONS, max_epochs=MAX_EPOCHS,
             "few epochs precisely because nothing is learning."),
     }
 
-    # One full-spectrum fit: the per-k projections are just its prefixes, so the
-    # analysis figures need no refitting. Previously a k=max(dims) fit was made
-    # per dimension and its 64-point curve was labelled "784 components", which
-    # misreported what the figure actually showed.
     wide = PCA(k=784).fit(data["X_train"])
 
-    # Projected splits per dimension, retained so best-architecture selection can
-    # be redone after degenerate runs are excluded, without refitting PCA.
     _representation_cache = {}
 
     for k in dims:
         print(f"\n{'=' * 60}\nTask-1: PCA k={k}\n{'=' * 60}")
-        # The projected splits, so the architecture can be re-selected after
-        # degenerate runs are excluded, without refitting PCA.
         wide.k = k
         _representation_cache[k] = wide.project_all(data)
         red = _representation_cache[k]
         var_ret = red["variance_retained"]
         print(f"  variance retained: {100 * var_ret:.2f}%")
 
-        # Task-1a analysis figures: cumulative variance retained, and the eigen
-        # spectrum that explains WHY it decays that way. Both use the same
-        # 784-component fit, so they are consistent with each other.
         curve = wide.explained_variance_curve().cpu().tolist()
         plots.pca_variance_curve(
             curve, "Task-1a: cumulative variance retained vs retained dimension",
@@ -136,10 +122,6 @@ def run_task1(data, outdir="results", dims=DIMENSIONS, max_epochs=MAX_EPOCHS,
             print(f"  {arch}: val={100 * res['final_val_acc']:.2f}% "
                   f"({res['epochs_run']} epochs){flag}")
 
-            # Exhaustive per-run figures: loss AND accuracy, so a reader can see
-            # convergence and whether the run actually learned, for EVERY (k, arch)
-            # pair and not only the winner. Anything not needed later is deleted
-            # from the folder tree, not regenerated.
             hist = res["train_loss"]
             if hist:
                 plots.loss_and_accuracy(
@@ -159,8 +141,6 @@ def run_task1(data, outdir="results", dims=DIMENSIONS, max_epochs=MAX_EPOCHS,
                     os.path.join(dirs["training"],
                                  f"task1_k{k}_{arch}_loss.png"))
 
-        # Select best architecture on VALIDATION accuracy. Ties broken by
-        # earliest convergence so the cheaper model wins an exact tie.
         best_arch = max(
             dim_entry["architectures"].items(),
             key=lambda kv: (kv[1]["val_acc"], -kv[1]["epochs_run"]),
@@ -176,10 +156,6 @@ def run_task1(data, outdir="results", dims=DIMENSIONS, max_epochs=MAX_EPOCHS,
 
         dim_entry["best_arch"] = best_arch
         dim_entry["test_accuracy"] = test_res["accuracy"]
-        # Also record it per-architecture so the test-accuracy heatmap can fill
-        # the SELECTED architecture's cell. That cell used to fall back to nan,
-        # because the per-architecture loop skips best_arch, leaving 4 of 16
-        # heatmap cells silently blank.
         dim_entry["architectures"][best_arch]["test_accuracy_all_archs"] = \
             test_res["accuracy"]
         dim_entry["train_accuracy"] = train_res["accuracy"]
@@ -190,7 +166,6 @@ def run_task1(data, outdir="results", dims=DIMENSIONS, max_epochs=MAX_EPOCHS,
               f"val={100 * best['val_acc']:.2f}%  "
               f"TEST={100 * test_res['accuracy']:.2f}%")
 
-        # Confusion matrix + per-class breakdown for the SELECTED architecture.
         plots.confusion_matrix(
             test_res["confusion_matrix"],
             f"Task-1: PCA k={k}, {best_arch} — test confusion matrix\n"
@@ -210,10 +185,6 @@ def run_task1(data, outdir="results", dims=DIMENSIONS, max_epochs=MAX_EPOCHS,
             os.path.join(dirs["accuracy"],
                          f"task1_k{k}_{best_arch}_per_class.png"))
 
-        # Confusion matrix for EVERY architecture that ran, degenerate ones
-        # included. A collapsed model's matrix is informative: it shows the
-        # model predicted a single class for everything, which is the evidence
-        # for the degeneration note rather than an assertion about it.
         for arch, av in dim_entry["architectures"].items():
             if arch == best_arch:
                 continue
@@ -238,12 +209,6 @@ def run_task1(data, outdir="results", dims=DIMENSIONS, max_epochs=MAX_EPOCHS,
 
         results["by_dimension"][k] = dim_entry
 
-    # ── Task-1c: best reduced dimension, by TEST accuracy ──────────────────
-    # Degenerate runs (finished at chance accuracy) are EXCLUDED from selection.
-    # A collapsed model that happens to edge out a real one must never be chosen
-    # as "best", and the architecture for each dimension was picked earlier on
-    # validation accuracy - so re-do that selection among the survivors, then
-    # recompute its test accuracy to match.
     for d in dims:
         e = results["by_dimension"][d]
         collapsed = [a for a in e["architectures"]
@@ -257,15 +222,12 @@ def run_task1(data, outdir="results", dims=DIMENSIONS, max_epochs=MAX_EPOCHS,
                   f"original selection and reporting it as unreliable")
             continue
 
-        # Re-select on validation among survivors only.
         best_arch = max(survivors.items(),
                         key=lambda kv: (kv[1]["val_acc"], -kv[1]["epochs_run"]))[0]
         changed = best_arch != e["best_arch"]
         e["best_arch"] = best_arch
         e["degenerate_archs"] = collapsed
         if changed:
-            # Test accuracy must follow the architecture actually selected, so
-            # recompute it rather than leaving the old number in place.
             model = build_classifier(best_arch, input_dim=d,
                                      num_classes=len(CLASS_NAMES)).to(device)
             model.load_state_dict(e["architectures"][best_arch]["model_state"])
@@ -283,9 +245,6 @@ def run_task1(data, outdir="results", dims=DIMENSIONS, max_epochs=MAX_EPOCHS,
     results["best_test_accuracy"] = best_dim[1]["test_accuracy"]
     results["best_dimension_arch"] = best_dim[1]["best_arch"]
 
-    # State the bias explicitly instead of quietly benefiting from it: A4 asks
-    # which dimension is best and reads it off the test scores, which makes the
-    # headline a maximum over several test numbers.
     results["selection_bias"] = selection_bias_report(
         results["by_dimension"],
         get_test=lambda v: v["test_accuracy"],
@@ -299,13 +258,6 @@ def run_task1(data, outdir="results", dims=DIMENSIONS, max_epochs=MAX_EPOCHS,
           f"validation would pick k={_sb['selected_by_validation']} "
           f"({100 * _sb['selected_by_validation_accuracy']:.2f}%)")
 
-    # Accuracy falls as k rises here even though variance retained rises. The
-    # cause is models.SIZING DECISION: architectures are held FIXED across
-    # dimensions, so the first layer's input grows from 32 to 256 while its width
-    # stays put, making it progressively worse conditioned. A4's plots make this
-    # look like "more dimensions hurt", which is a training artefact rather than
-    # a property of the representation - say so before a reader draws that
-    # conclusion.
     accs = [results["by_dimension"][d]["test_accuracy"] for d in dims]
     if len(accs) > 1 and accs[-1] < accs[0]:
         results["accuracy_vs_dimension"] = {
@@ -326,10 +278,6 @@ def run_task1(data, outdir="results", dims=DIMENSIONS, max_epochs=MAX_EPOCHS,
         print("  NOTE: accuracy falls as k rises though variance retained rises; "
               "this is the fixed-width first layer, not the representation.")
 
-    # ── Task-1c comparison figures ───────────────────────────────────────────
-    # Accuracy vs dimension answers "which dimension is best" directly. The A3
-    # baseline line is drawn on every one so the comparison in Task-1d is visible
-    # in the figure rather than only in the text.
     plots.dimension_bars(
         {"test accuracy": [100 * results["by_dimension"][d]["test_accuracy"]
                            for d in dims],
@@ -342,8 +290,6 @@ def run_task1(data, outdir="results", dims=DIMENSIONS, max_epochs=MAX_EPOCHS,
         ref=100 * A3_TEST_ACC,
         ref_label="A3 baseline (raw 784-d, NAG) 98.76%")
 
-    # epochs-to-convergence per dimension, so the cost of each dimension is
-    # comparable with its accuracy rather than being an invisible quantity.
     plots.dimension_bars(
         {"epochs": [results["by_dimension"][d]["architectures"][
             results["by_dimension"][d]["best_arch"]]["epochs_run"] for d in dims]},
@@ -352,7 +298,6 @@ def run_task1(data, outdir="results", dims=DIMENSIONS, max_epochs=MAX_EPOCHS,
         os.path.join(dirs["comparison"], "task1_epochs_vs_dimension.png"),
         ylabel="epochs (lower is cheaper)")
 
-    # Architecture x dimension heatmaps for validation and test accuracy.
     plots.accuracy_heatmap(
         archs, [str(d) for d in dims],
         [[100 * results["by_dimension"][d]["architectures"][a]["val_acc"]
@@ -368,7 +313,6 @@ def run_task1(data, outdir="results", dims=DIMENSIONS, max_epochs=MAX_EPOCHS,
         os.path.join(dirs["comparison"], "task1_heatmap_test.png"),
         rowlabel="architecture", collabel="retained dimension k")
 
-    # Superimposed loss curves, for every dimension x its selected architecture.
     hist, labels = [], []
     for d in dims:
         a = results["by_dimension"][d]["best_arch"]
@@ -380,8 +324,6 @@ def run_task1(data, outdir="results", dims=DIMENSIONS, max_epochs=MAX_EPOCHS,
         hist, labels, "Task-1: training loss vs epoch (best architecture per dimension)",
         os.path.join(dirs["comparison"], "task1_loss_curves_by_dimension.png"))
 
-    # One curve per architecture, superimposed across dimensions: shows whether
-    # an architecture's advantage is consistent or specific to one dimension.
     for a in archs:
         hs, ls = [], []
         for d in dims:
@@ -395,7 +337,6 @@ def run_task1(data, outdir="results", dims=DIMENSIONS, max_epochs=MAX_EPOCHS,
                 os.path.join(dirs["comparison"],
                              f"task1_{a}_loss_across_dimensions.png"))
 
-    # Generalisation gap for every selected configuration.
     plots.generalisation_gap(
         {f"k={d}": 100 * (results["by_dimension"][d]["train_accuracy"]
                           - results["by_dimension"][d]["test_accuracy"])
@@ -403,7 +344,6 @@ def run_task1(data, outdir="results", dims=DIMENSIONS, max_epochs=MAX_EPOCHS,
         "Task-1: train minus test accuracy by dimension (generalisation)",
         os.path.join(dirs["comparison"], "task1_generalisation_gap.png"))
 
-    # Task-1d comparison against A3.
     gap = 100 * (results["best_test_accuracy"] - A3_TEST_ACC)
     results["comparison_to_a3"] = {
         "a3_test_acc": A3_TEST_ACC,

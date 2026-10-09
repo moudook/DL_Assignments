@@ -39,7 +39,6 @@ from run_tracker import RunTracker, atomic_write_text, thin_history
 from train import train_autoencoder, train_classifier, encode_all, MAX_EPOCHS, \
     AUTOENCODER_LR, CLASSIFIER_LR, TOL
 
-# A4 Task-5a mandates exactly these two noise levels.
 NOISE_LEVELS = [0.2, 0.4]
 
 
@@ -128,7 +127,6 @@ def run_task5(data, outdir="results", max_epochs=MAX_EPOCHS, device=None,
         "tolerance": TOL,
         "max_epochs": max_epochs,
         "by_noise": {},
-        # architecture x noise-level grid, for the Task-5d-ii comparison.
         "by_arch": {},
     }
 
@@ -136,8 +134,6 @@ def run_task5(data, outdir="results", max_epochs=MAX_EPOCHS, device=None,
         tag = f"noise{int(noise * 100)}"
         print(f"\n{'=' * 60}\nTask-5: {tag}% noise, k={bottleneck}\n{'=' * 60}")
 
-        # Seeded generator: the corruption pattern must be reproducible, or the
-        # reported reconstruction error for the same model is not repeatable.
         gen = torch.Generator(device=device).manual_seed(42)
 
         run_id = f"task5_dae_{tag}_k{bottleneck}"
@@ -156,9 +152,6 @@ def run_task5(data, outdir="results", max_epochs=MAX_EPOCHS, device=None,
         print(f"  recon error  train={recon['train']:.6f}  "
               f"val={recon['val']:.6f}  test={recon['test']:.6f}")
 
-        # Task-5c: reconstruction grids per split, with originals. Also a
-        # triptych per split showing what the network was FED (corrupted input),
-        # since "reconstruction" alone is ambiguous for a denoising model.
         grids = {}
         for split in ("train", "val", "test"):
             idx, _ = one_per_class(data, split)
@@ -171,9 +164,6 @@ def run_task5(data, outdir="results", max_epochs=MAX_EPOCHS, device=None,
                 os.path.join(dirs["recon"],
                              f"task5_dae_{tag}_recon_{split}.png"))
 
-            # Clean / corrupted / reconstructed: the noise used to build the
-            # model. Sampled with a seeded generator so the figure shows the same
-            # corruption the model would have seen.
             X = data[f"X_{split}"]
             sel = X[torch.as_tensor(idx, device=X.device)]
             from models import make_noise
@@ -191,14 +181,6 @@ def run_task5(data, outdir="results", max_epochs=MAX_EPOCHS, device=None,
                 os.path.join(dirs["recon"],
                              f"task5_dae_{tag}_triptych_{split}.png"))
 
-        # Task-5d. Two readings of A4's Task-5d coexist, so both are satisfied:
-        #   - the note "use the same best architecture as Task-3" names ONE
-            #     architecture, which is recorded as task3_selected_arch;
-        #   - 5d-ii says "for the different architectures of FCNN classification
-        #     model", which asks for validation AND test accuracy across the
-        #     architecture set used in Tasks 1/3/4.
-        # Running all four costs seconds and covers both readings, so the report
-        # never has to guess which was meant.
         red = encode_all(trained, data)
         clf_archs = {}
 
@@ -229,23 +211,16 @@ def run_task5(data, outdir="results", max_epochs=MAX_EPOCHS, device=None,
                 "hidden_sizes": CLASSIFIER_ARCHS[arch],
                 "confusion_matrix": test_r["confusion_matrix"],
                 "per_class": test_r["per_class"],
-                # Underscore-prefixed so _jsonable drops it from the JSON;
-                # consumed directly by the comparison figures below.
                 "_history": cres["train_loss"],
             }
             flag = "  <-- DEGENERATE" if cres.get("degenerate") else ""
             print(f"  {arch}: val={100 * cres['final_val_acc']:.2f}%  "
                   f"TEST={100 * test_r['accuracy']:.2f}%{flag}")
 
-        # Select on VALIDATION accuracy, excluding degenerate runs. A collapsed
-        # classifier must never be reported as Task-5's best.
         collapsed = [a for a, v in clf_archs.items() if v.get("degenerate")]
         survivors = {a: v for a, v in clf_archs.items() if a not in collapsed}
         if not survivors:
             survivors = clf_archs
-        # task3_arch comes from selection.json and is indexed below, so it must be
-        # present in the trained set. Guarded rather than assumed: with a --archs
-        # subset that omits Task-3's winner this used to raise KeyError.
         if task3_arch not in clf_archs:
             missing = sorted(set(clf_archs) | {task3_arch})
             raise KeyError(
@@ -261,8 +236,6 @@ def run_task5(data, outdir="results", max_epochs=MAX_EPOCHS, device=None,
               f"[Task-3's architecture: {task3_arch}, "
               f"val={100 * clf_archs[task3_arch]['val_acc']:.2f}%]")
 
-        # Figures for the SELECTED architecture: confusion matrices (raw +
-        # normalised) and per-class breakdown.
         plots.confusion_matrix(
             best["confusion_matrix"],
             f"Task-5: denoising AE {tag}% noise, k={bottleneck}, {best_arch} "
@@ -281,8 +254,6 @@ def run_task5(data, outdir="results", max_epochs=MAX_EPOCHS, device=None,
             f"— per-class test accuracy",
             os.path.join(dirs["accuracy"], f"task5_per_class_{tag}.png"))
 
-        # A confusion matrix for every other architecture too, so the "different
-        # architectures" comparison in Task-5d-ii is backed by a figure per arch.
         for arch, av in clf_archs.items():
             if arch == best_arch:
                 continue
@@ -296,13 +267,11 @@ def run_task5(data, outdir="results", max_epochs=MAX_EPOCHS, device=None,
                 os.path.join(dirs["confusion"],
                              f"task5_confusion_{tag}_{arch}.png"))
 
-        # Autoencoder training curve + classifier training/accuracy curves.
         plots.loss_curve(
             res["history"],
             f"Task-5: denoising AE {tag}% noise — reconstruction MSE vs epoch",
             os.path.join(dirs["training"], f"task5_dae_{tag}_loss.png"),
             ylabel="reconstruction MSE (train)")
-        # Loss/accuracy curve for every architecture at this noise level.
         for arch, av in clf_archs.items():
             plots.loss_and_accuracy(
                 av.get("_history", []),
@@ -315,7 +284,6 @@ def run_task5(data, outdir="results", max_epochs=MAX_EPOCHS, device=None,
             f"Task-5: denoising AE {tag}% noise — reconstruction error per split",
             os.path.join(dirs["recon_error"], f"task5_{tag}_recon_error.png"))
 
-        # Heatmap of architecture x noise level for the Task-5d comparison.
         results["by_arch"].setdefault(tag, {})
         for arch, av in clf_archs.items():
             results["by_arch"][tag][arch] = av
@@ -324,9 +292,6 @@ def run_task5(data, outdir="results", max_epochs=MAX_EPOCHS, device=None,
             "noise": noise,
             "bottleneck": bottleneck,
             "params": count_params(model),
-            # Kept in the returned dict (and stripped only when serialising to
-            # JSON by _jsonable) so run_all can hand the trained denoiser to
-            # Task-6 without retraining it.
             "model_state": res["model_state"],
             "recon_error": recon,
             "denoise_error": res.get("denoise_error"),
@@ -335,14 +300,6 @@ def run_task5(data, outdir="results", max_epochs=MAX_EPOCHS, device=None,
             "stopped_early": res["stopped_early"],
             "history": res["history"],
             "grids": grids,
-                # The architecture A4's note directs us to use for this noise level,
-                # recorded separately from whichever architecture won on validation
-                # so the report can state both.
-                # The accuracy keys are deliberately NOT called
-                # "task3_best_arch_val_acc": that reads as Task-3's own score,
-                # which it is not. They are THIS task's scores on the architecture
-                # Task-3 selected. Misnaming them once made a reader quote Task-5's
-                # val accuracy where Task-3's was wanted.
                 "task3_selected_arch": task3_arch,
                 "this_task_val_acc_on_task3_arch":
                     clf_archs[task3_arch]["val_acc"],
@@ -358,13 +315,10 @@ def run_task5(data, outdir="results", max_epochs=MAX_EPOCHS, device=None,
                 "epochs_run": best["epochs_run"],
                 "confusion_matrix": best["confusion_matrix"],
                 "per_class": best["per_class"],
-                # Prefixed with _ so _jsonable keeps it out of the JSON; the
-                # figures above consume it directly instead.
                 "_history": best["_history"],
             },
         }
 
-    # ── Task-5 comparison figures ────────────────────────────────────────────
     plots.recon_error_bars(
         {name: e["recon_error"] for name, e in results["by_noise"].items()},
         f"Task-5b: denoising AE reconstruction error, k={bottleneck}",
@@ -380,9 +334,6 @@ def run_task5(data, outdir="results", max_epochs=MAX_EPOCHS, device=None,
         f"(k={bottleneck}, {task3_arch} — architecture from Task-3)",
         os.path.join(dirs["accuracy"], "task5_accuracy_by_noise.png"))
 
-    # Reconstruction error against noise level, which is the quantity that
-    # reveals the tradeoff Task-5 is about: more corruption is harder to
-    # reconstruct, but forces the model to learn noise-invariant features.
     plots.dimension_bars(
         {"train": [1000 * e["recon_error"]["train"]
                    for e in results["by_noise"].values()],
@@ -395,7 +346,6 @@ def run_task5(data, outdir="results", max_epochs=MAX_EPOCHS, device=None,
         os.path.join(dirs["recon_error"], "task5_recon_vs_noise.png"),
         ylabel="reconstruction error x1000 (lower is better)")
 
-    # Generalisation gap of the classifiers, per noise level.
     plots.generalisation_gap(
         {f"{int(e['noise'] * 100)}% noise":
             100 * (e["classifier"]["train_acc"] - e["classifier"]["test_acc"])
@@ -403,8 +353,6 @@ def run_task5(data, outdir="results", max_epochs=MAX_EPOCHS, device=None,
         "Task-5: train minus test accuracy, classifier generalisation by noise",
         os.path.join(dirs["comparison"], "task5_generalisation_gap.png"))
 
-    # Superimposed AE training curves: the two noise levels must be compared
-    # against each other, which is the whole point of Task-5's design.
     hist, labels = [], []
     for name, e in results["by_noise"].items():
         if e["history"]:
@@ -424,8 +372,6 @@ def run_task5(data, outdir="results", max_epochs=MAX_EPOCHS, device=None,
                    key=lambda kv: kv[1]["classifier"]["test_acc"])
     results["best_noise"] = float(best_tag[1]["noise"])
     results["best_test_accuracy"] = best_tag[1]["classifier"]["test_acc"]
-    # Previously this top-level key did not exist at all (the per-noise-level
-    # "best_arch" lives inside by_noise), so selection.json recorded null.
     results["best_arch"] = best_tag[1]["best_arch"]
     print(f"\n  BEST noise level by test accuracy: {best_tag[1]['noise']:.0%}")
 

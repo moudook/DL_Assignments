@@ -1020,10 +1020,16 @@ is.  The claim that survives is the weaker and still useful one: no representati
 onto a pair the raw-input classifier did not already confuse.  This
 is the most substantive finding in the report: the reduced representations are not introducing new
 failure modes, they are compressing the same information the raw-input classifier used and
-inheriting its errors.  The confusions are themselves geometrically sensible --- a $5$ and a $6$
-differ mainly in the curvature of the lower bowl, while a $4$ and a $7$ share an upper diagonal and
-an upright stem.  A code that preserved those distinctions perfectly would show a different pattern,
-so the stability of the pattern is direct evidence about what the codes keep.
+inheriting its errors.  What the confusions are \emph{not} is proximity-driven, which is
+worth stating because the obvious geometric story does not survive measurement: ranking
+the ten class pairs by the distance between their train-set prototypes against the
+observed confusion order gives a Spearman rank correlation of $\rho=-0.22$, so the
+\emph{closest} prototypes are confused \emph{less}, not more.  The nearest pair,
+$4\leftrightarrow7$, is only the second-most-confused; the most-confused pair,
+$5\leftrightarrow6$, is merely fourth-nearest; and the eighth-nearest pair,
+$0\leftrightarrow6$, is tied for third.  The stability of the pattern across
+representations is therefore evidence about what the codes \emph{keep}, not about which
+digits happen to look alike.
 
 \paragraph{Depth helps while the bottleneck stays narrow, and the failures are the classifier's.}
 The expectation going in was that the two $400$-wide sigmoid layers would cost more than they

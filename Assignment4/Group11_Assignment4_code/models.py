@@ -30,53 +30,15 @@ import torch.nn as nn
 
 INIT_SEED = 42
 
-# ── Classifier architecture selection ────────────────────────────────────────
-# A4 mandates NO hidden widths for the FCNN classifiers, so these are derived,
-# not chosen by taste. Four criteria, applied in order:
-#
-#   1. Parameter-to-sample budget. With 11,385 training samples, keeping
-#      params/sample bounded (order ~1-5x) limits overfitting risk. This gives an
-#      objective ceiling instead of a preference.
-#   2. Funnel geometry. Hidden widths decrease monotonically toward the 5-way
-#      output. A wide first layer extracts many weak features before narrowing;
-#      the reverse shape is wrong for this task.
-#   3. First layer should scale with input dimension. A 784-input net can support
-#      a 256-unit first layer; a 32-input net cannot (32->256 is an 8x expansion
-#      into a space whose rank is capped at 32).
-#   4. Depth span of 3-5 hidden layers (carried over from A3).
-#
-# Assignment-3's shapes were sized for 784-d input and violate criterion 1 at
-# every reduced dimension used in A4. At d=256, A3's 3L_B [256,64,16] needs 7.3x
-# more parameters than training samples. Those are NOT reused.
-#
-# SIZING DECISION - held FIXED across input dimensions, sized for the worst case
-# d=256 (the largest reduced representation A4 uses):
-# A4's central question is which reduced representation classifies best. If each
-# dimension got its own tuned capacity, differences would be confounded - a bigger
-# net would win for reasons unrelated to representation quality. Holding the
-# architectures constant means every dimension faces identical capacity, so a
-# measured difference is attributable to the representation itself. This is why the
-# sets are NOT rescaled per dimension despite criterion 3.
-#
-# The four span shallow-wide to deep-narrow:
 CLASSIFIER_ARCHS = {
-    "3L_A": [128, 64, 32],        # shallow, moderate width; widest capacity
-    "3L_B": [64, 32, 16],         # shallow, narrow - capacity-floor probe
-    "4L_A": [128, 64, 32, 16],    # mid-depth
-    "5L_A": [64, 32, 16, 8, 4],   # deepest, narrowest
+    "3L_A": [128, 64, 32],
+    "3L_B": [64, 32, 16],
+    "4L_A": [128, 64, 32, 16],
+    "5L_A": [64, 32, 16, 8, 4],
 }
-# Honest caveat for the report: several of these still exceed a strict 1x
-# params/sample budget at d=256. That is normal for MNIST-scale MLPs, but the
-# defensible claim is "bounded and ordered by capacity", NOT "at budget". Do not
-# overstate it.
-#
-# A4 specifies no count, only that the set be consistent across Tasks 1/3/4/5.
 
-# Bottleneck sizes required by A4 Tasks 2/3/4.
 BOTTLENECKS = [32, 64, 128, 256]
 
-# 3-hidden autoencoder outer width, mandated by A4 ("400 neurons in the first and
-# third layers").
 AE_OUTER = 400
 
 
@@ -160,7 +122,7 @@ class Autoencoder(nn.Module):
         elif kind == "3hidden":
             self.encoder = nn.Sequential(
                 nn.Linear(input_dim, outer), nn.Sigmoid(),
-                nn.Linear(outer, bottleneck),   # linear bottleneck
+                nn.Linear(outer, bottleneck),
             )
             self.decoder = nn.Sequential(
                 nn.Linear(bottleneck, outer), nn.Sigmoid(),

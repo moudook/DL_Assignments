@@ -53,7 +53,6 @@ TASKS = {
     6: "Weight visualisation",
 }
 
-# Task N implies these must have run first.
 DEPENDENCIES = {1: [], 2: [], 3: [2], 4: [2], 5: [3], 6: [3, 5]}
 
 
@@ -84,7 +83,6 @@ def main():
     archs = args.archs or list(CLASSIFIER_ARCHS)
     dims = args.dims
 
-    # Expand --only with the dependencies each requested task needs.
     if args.only:
         requested = set()
         stack = list(args.only)
@@ -116,14 +114,9 @@ def main():
 
     os.makedirs(args.outdir, exist_ok=True)
 
-    # Create the whole figure tree BEFORE training starts. Every task, every
-    # subfolder, even ones a run may never reach, so the structure is browsable
-    # from the first moment and the numbered layout is guaranteed present.
     import plots
     plots.prepare_all_dirs(args.outdir, sorted(TASKS))
 
-    # Record the configuration alongside the results so every number in the
-    # report is traceable to the run that produced it.
     atomic_write_text(json.dumps({
         "tasks": todo,
         "max_epochs": args.max_epochs,
@@ -142,8 +135,13 @@ def main():
     log(f"train {tuple(data['X_train'].shape)}  "
         f"val {tuple(data['X_val'].shape)}  test {tuple(data['X_test'].shape)}")
 
-    # Imported here so a syntax error in a later module does not block the early
-    # tasks, and so the imports happen after the dataset is on the GPU.
+    try:
+        import dataset_figures
+        dataset_figures.build_all(data, args.outdir,
+                                  with_confusions=os.devnull)
+    except Exception as exc:
+        print(f"[WARN] dataset figures failed: {exc!r}")
+
     from task1_pca import run_task1
     from task2_autoencoder import run_task2
     from task3_ae_classify import run_task3, run_task4
@@ -151,8 +149,8 @@ def main():
     from task6_weights import run_task6
 
     t_start = time.time()
-    ae_states = {}          # "kind_b" -> state_dict, from Task-2
-    denoise_states = {}     # "noise20"/"noise40" -> state_dict, from Task-5
+    ae_states = {}
+    denoise_states = {}
     summary = {}
 
     for t in todo:
@@ -219,8 +217,6 @@ def main():
         elif t == 5:
             r = run_task5(data, outdir=args.outdir,
                           max_epochs=args.max_epochs, device=device)
-            # task6 looks denoise_state up by "noise20"/"noise40", which is the
-            # same key task5 uses in by_noise.
             denoise_states = {}
             for key, entry in r["by_noise"].items():
                 st = entry.get("model_state")
@@ -233,13 +229,6 @@ def main():
             }
 
         elif t == 6:
-            # Task-6a wants the BEST 1-hidden AE representation - meaning the
-            # autoencoder at Task-3's WINNING bottleneck, not just any
-            # 1-hidden model. Handing over the first 1hidden_* state found
-            # loaded a k=32 encoder into a k=64 slot whenever the winning
-            # bottleneck was 64, and load_state_dict raised a shape mismatch that
-            # killed Task-6 after Tasks 1-5 had already completed.
-            # The state MUST therefore be keyed by the resolved bottleneck.
             from task6_weights import resolve_selection
             sel_bottleneck, _ = resolve_selection(args.outdir)
             plain_key = f"1hidden_{sel_bottleneck}"
@@ -250,7 +239,6 @@ def main():
             else:
                 log(f"Task-6 reusing {plain_key} from Task-2")
 
-            # Denoising states must match Task-5's bottleneck too.
             denoise_for_task6 = {}
             for noise in (20, 40):
                 st = (denoise_states or {}).get(f"noise{noise}")
@@ -269,33 +257,32 @@ def main():
 
         log(f"TASK {t} finished in {(time.time() - t0) / 60:.1f} min")
 
-    # ── cross-task figures: comparisons that only exist across tasks ──────────
     log("# building cross-task summary figures")
     try:
         from summary_figures import build_summary
         build_summary(args.outdir)
     except Exception as exc:
-        # Summary figures are analysis, not results. Losing them must not
-        # invalidate a completed pipeline, so the failure is reported loudly and
-        # the pipeline still ends in a usable state.
         print(f"[WARN] summary figures failed: {exc!r}")
+
+    try:
+        from dataset_figures import class_mean_distances
+        if 1 in todo:
+            cm_path = os.path.join(args.outdir, "task1.json")
+            class_mean_distances(data, args.outdir, confusions_from=cm_path)
+            if os.path.exists(cm_path):
+                print("  redrew dataset_class_mean_distances.png with confusion panels")
+    except Exception as exc:
+        print(f"[WARN] confusion-panel redraw failed: {exc!r}")
 
     total = (time.time() - t_start) / 60
     atomic_write_text(json.dumps(summary, indent=2, default=float),
                       os.path.join(args.outdir, "summary.json"))
-    # Results live ONLY under <outdir>. An earlier ad-hoc run left summary.json
-    # and selection.json beside the source; they went stale while results_final/
-    # moved on, and an independent audit read the stale copy and reported numbers
-    # that matched nothing in the real run. Remove any such strays so the only
-    # summary a reader can find is the current one.
     for _stray in ("summary.json", "selection.json"):
         _p = os.path.join(os.path.dirname(os.path.abspath(__file__)), _stray)
         if os.path.exists(_p):
             os.remove(_p)
             print(f"Removed stale root {_stray} (results live in {args.outdir}/)")
 
-    # Drop figure subfolders that never received a figure, so browsing the tree
-    # shows only folders that actually hold something.
     try:
         import plots
         pruned = plots.prune_empty_dirs(args.outdir)
@@ -311,7 +298,6 @@ def main():
     print(f"\nFigures : {os.path.join(args.outdir, 'plots')}")
     print(f"Results : {args.outdir}/task{{1..6}}.json, summary.json")
     print(f"Monitor : python monitor.py --outdir {args.outdir} --watch --gpu")
-
 
 
 if __name__ == "__main__":

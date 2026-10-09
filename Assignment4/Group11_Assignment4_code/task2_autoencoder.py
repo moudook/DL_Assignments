@@ -33,11 +33,8 @@ from models import BOTTLENECKS, build_autoencoder, count_params
 from run_tracker import RunTracker, atomic_write_text, thin_history
 from train import train_autoencoder, MAX_EPOCHS, AUTOENCODER_LR, TOL
 
-# A4 Task-2a mandates both depths.
 AE_KINDS = ["1hidden", "3hidden"]
 
-# A4 uses both names for the same 3-hidden model; record both so the report and
-# the JSON cannot be read as describing different architectures.
 KIND_LABEL = {"1hidden": "1-hidden AE", "3hidden": "3-hidden AE (A4 Task-4: 2-hidden)"}
 
 
@@ -62,7 +59,6 @@ def run_task2(data, outdir="results", bottlenecks=BOTTLENECKS, max_epochs=MAX_EP
         "lr": AUTOENCODER_LR,
         "loss": "MSE",
         "tolerance": TOL,
-        # The autoencoders do NOT use the absolute TOL; see train.AE_PLATEAU_WINDOW.
         "stopping_rule": "plateau on windowed best loss (relative)",
         "max_epochs": max_epochs,
         "batch_size": "full",
@@ -82,7 +78,6 @@ def run_task2(data, outdir="results", bottlenecks=BOTTLENECKS, max_epochs=MAX_EP
             res = train_autoencoder(model, data, f"{kind}_k{b}", tracker=tracker,
                                     max_epochs=max_epochs, device=device)
 
-            # Reload the trained state for the figures below.
             trained = build_autoencoder(kind, b).to(device)
             trained.load_state_dict(res["model_state"])
 
@@ -93,7 +88,6 @@ def run_task2(data, outdir="results", bottlenecks=BOTTLENECKS, max_epochs=MAX_EP
                   f"early_stop={res['stopped_early']}  "
                   f"params={count_params(model):,}")
 
-            # A4 Task-2d: one image per class, for EVERY split, with originals.
             grid_paths = {}
             for split in ("train", "val", "test"):
                 idx, _ = one_per_class(data, split)
@@ -107,7 +101,6 @@ def run_task2(data, outdir="results", bottlenecks=BOTTLENECKS, max_epochs=MAX_EP
                                  f"task2_{kind}_k{b}_recon_{split}.png"))
                 grid_paths[split] = p
 
-            # Per-model training curve, plus its own loss curve.
             plots.loss_and_accuracy(
                 res["history"],
                 f"Task-2: {KIND_LABEL[kind]} k={b} — reconstruction loss vs epoch",
@@ -121,17 +114,12 @@ def run_task2(data, outdir="results", bottlenecks=BOTTLENECKS, max_epochs=MAX_EP
                              f"task2_{kind}_k{b}_loss.png"),
                 ylabel="reconstruction MSE (train)")
 
-            # Reconstruction-error figures for this specific model, so the
-            # cross-model aggregates have a per-model counterpart to point at.
             plots.recon_error_bars(
                 {"reconstruction error": recon},
                 f"Task-2: {KIND_LABEL[kind]} k={b} — reconstruction error per split",
                 os.path.join(dirs["recon_error"],
                              f"task2_{kind}_k{b}_recon_error.png"))
 
-            # Examples of a single digit reconstructed at increasing bottleneck
-            # sizes: makes the information loss per k legible for one image
-            # rather than averaged across a grid.
             idx, _ = one_per_class(data, "test")
             o, r, _ = reconstruction_grid(trained, data, "test", [idx[0]],
                                           device=device)
@@ -155,7 +143,6 @@ def run_task2(data, outdir="results", bottlenecks=BOTTLENECKS, max_epochs=MAX_EP
                 "model_state": res["model_state"],
             }
 
-    # ── Task-2c comparison figures ───────────────────────────────────────────
     plots.recon_error_bars(
         {name: e["recon_error"] for name, e in results["by_model"].items()},
         "Task-2c: reconstruction error per split, all architectures",
@@ -167,9 +154,6 @@ def run_task2(data, outdir="results", bottlenecks=BOTTLENECKS, max_epochs=MAX_EP
         plots.recon_error_bars(
             subset, f"Task-2c: {KIND_LABEL[kind]} — reconstruction error vs bottleneck",
             os.path.join(dirs["recon_error"], f"task2_recon_error_{kind}.png"))
-        # Reconstruction error plotted against bottleneck size, so the "does a
-        # bigger bottleneck reconstruct better" question is answered by a trend
-        # line rather than by reading bars.
         plots.dimension_bars(
             {"train": [1000 * results["by_model"][f"{kind}_{b}"]["recon_error"]["train"]
                        for b in bottlenecks],
@@ -183,7 +167,6 @@ def run_task2(data, outdir="results", bottlenecks=BOTTLENECKS, max_epochs=MAX_EP
                          f"task2_recon_vs_bottleneck_{kind}.png"),
             ylabel="reconstruction error x1000 (lower is better)")
 
-    # 1-hidden vs 3-hidden at each bottleneck, both depths on one figure.
     plots.dimension_bars(
         {"1-hidden AE": [1000 * results["by_model"][f"1hidden_{b}"]["recon_error"]["test"]
                          for b in bottlenecks],
@@ -195,8 +178,6 @@ def run_task2(data, outdir="results", bottlenecks=BOTTLENECKS, max_epochs=MAX_EP
                      "task2_depth_comparison.png"),
         ylabel="reconstruction error x1000 (lower is better)")
 
-    # Recon error vs parameter count: shows whether the extra depth buys
-    # anything proportional to what it costs.
     for kind in kinds:
         plots.dimension_bars(
             {"params (k)": [results["by_model"][f"{kind}_{b}"]["params"] / 1000
@@ -208,8 +189,6 @@ def run_task2(data, outdir="results", bottlenecks=BOTTLENECKS, max_epochs=MAX_EP
             os.path.join(dirs["recon_error"],
                          f"task2_{kind}_params_vs_error.png"))
 
-    # Superimposed curves: one per depth, all bottlenecks together. Frozen the
-    # training set means the y-axis is directly comparable between them.
     for kind in kinds:
         hs, ls = [], []
         for b in bottlenecks:
@@ -224,8 +203,6 @@ def run_task2(data, outdir="results", bottlenecks=BOTTLENECKS, max_epochs=MAX_EP
                          f"task2_{kind}_loss_across_bottlenecks.png"),
             ylabel="reconstruction MSE (train)")
 
-    # Generalisation gap: train vs test reconstruction error. A widening gap would
-    # mean the encoder is memorising training images.
     plots.generalisation_gap(
         {name: 1000 * (e["recon_error"]["train"] - e["recon_error"]["test"])
          for name, e in results["by_model"].items()},
@@ -233,7 +210,6 @@ def run_task2(data, outdir="results", bottlenecks=BOTTLENECKS, max_epochs=MAX_EP
         os.path.join(dirs["comparison"], "task2_generalisation_gap.png"),
         ylabel="train - test recon error (x1000)")
 
-    # Best bottleneck per depth, by test reconstruction error.
     for kind in kinds:
         best = min((results["by_model"][f"{kind}_{b}"] for b in bottlenecks),
                    key=lambda e: e["recon_error"]["test"])

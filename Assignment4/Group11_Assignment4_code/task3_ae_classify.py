@@ -103,11 +103,6 @@ def run_ae_classify(data, kind, task_id, outdir="results",
     for b in bottlenecks:
         print(f"\n{'=' * 60}\nTask-{task_id}: {label} bottleneck k={b}\n{'=' * 60}")
 
-        # ── get (or train) the autoencoder, then extract the representation ──
-        # ae_state keys are "<kind>_<bottleneck>" (how run_all caches Task-2's
-        # trained models), so the lookup must build the same key. Checking
-        # `b in ae_state` against the integer bottleneck never matches, which
-        # silently disabled reuse and retrained every autoencoder.
         state_key = f"{kind}_{b}"
         if ae_state and state_key in ae_state and ae_state[state_key] is not None:
             ae = build_autoencoder(kind, b).to(device)
@@ -127,8 +122,6 @@ def run_ae_classify(data, kind, task_id, outdir="results",
             print(f"  autoencoder trained {ae_epochs_run} epochs, "
                   f"test recon={recon['test']:.6f}")
 
-        # The compressed representation — Task-3a / Task-4a. Drop-in dict, so
-        # train_classifier consumes it exactly like the PCA projections do.
         red = encode_all(ae, data)
         print(f"  representation: {tuple(red['X_train'].shape)}")
 
@@ -139,7 +132,6 @@ def run_ae_classify(data, kind, task_id, outdir="results",
             "architectures": {},
         }
 
-        # ── classifiers over this representation, all four architectures ──
         for arch in archs:
             run_id = f"{tag}_k{b}_{arch}"
             tracker = RunTracker(run_id, outdir, total_epochs=max_epochs)
@@ -163,7 +155,6 @@ def run_ae_classify(data, kind, task_id, outdir="results",
             print(f"  {arch}: val={100 * res['final_val_acc']:.2f}% "
                   f"({res['epochs_run']} epochs){flag}")
 
-            # Per-run loss + accuracy figure for every (bottleneck, architecture).
             hist = res["train_loss"]
             if hist:
                 plots.loss_and_accuracy(
@@ -183,10 +174,6 @@ def run_ae_classify(data, kind, task_id, outdir="results",
                     os.path.join(dirs["training"],
                                  f"{tag}_k{b}_{arch}_loss.png"))
 
-        # Exclude degenerate (chance-level) architectures from selection: a
-        # collapsed net must never be reported as the best model for a
-        # representation. See train.flag_degenerate for why the stopping rule
-        # alone does not catch this.
         collapsed = [a for a in entry["architectures"]
                      if entry["architectures"][a].get("degenerate")]
         survivors = {a: v for a, v in entry["architectures"].items()
@@ -198,7 +185,6 @@ def run_ae_classify(data, kind, task_id, outdir="results",
             print("  WARNING every architecture degenerate; selection unreliable")
             survivors = entry["architectures"]
 
-        # Select on VALIDATION accuracy only — never on test.
         best_arch = max(
             survivors.items(),
             key=lambda kv: (kv[1]["val_acc"], -kv[1]["epochs_run"]),
@@ -214,8 +200,6 @@ def run_ae_classify(data, kind, task_id, outdir="results",
 
         entry["best_arch"] = best_arch
         entry["test_accuracy"] = test_res["accuracy"]
-        # Mirror it into the per-architecture entry so the test-accuracy heatmap
-        # covers the selected architecture too; otherwise its cell is nan.
         entry["architectures"][best_arch]["test_accuracy_all_archs"] = \
             test_res["accuracy"]
         entry["train_accuracy"] = train_res["accuracy"]
@@ -225,9 +209,6 @@ def run_ae_classify(data, kind, task_id, outdir="results",
         print(f"  best (on val): {best_arch} val={100 * best['val_acc']:.2f}%  "
               f"TEST={100 * test_res['accuracy']:.2f}%")
 
-        # Confusion matrices + per-class breakdown for the SELECTED architecture:
-        # raw counts and row-normalised, since absolute counts and error rate show
-        # different things and both are needed for the report's analysis.
         plots.confusion_matrix(
             test_res["confusion_matrix"],
             f"Task-{task_id}: {label} k={b}, {best_arch} — test confusion matrix\n"
@@ -246,9 +227,6 @@ def run_ae_classify(data, kind, task_id, outdir="results",
             f"Task-{task_id}: {label} k={b}, {best_arch} — per-class test accuracy",
             os.path.join(dirs["accuracy"], f"{tag}_k{b}_{best_arch}_per_class.png"))
 
-        # Confusion matrix for EVERY architecture at this bottleneck, degenerate
-        # ones included: a collapsed model predicts one class for almost
-        # everything, so its matrix IS the evidence for the degeneracy note.
         for arch, av in entry["architectures"].items():
             if arch == best_arch:
                 continue
@@ -273,17 +251,12 @@ def run_ae_classify(data, kind, task_id, outdir="results",
 
         results["by_bottleneck"][b] = entry
 
-    # ── Task-3c / Task-4c: best representation by TEST accuracy ─────────────
     best_b = max(results["by_bottleneck"].items(),
                  key=lambda kv: kv[1]["test_accuracy"])
     results["best_bottleneck"] = int(best_b[0])
     results["best_arch"] = best_b[1]["best_arch"]
     results["best_test_accuracy"] = best_b[1]["test_accuracy"]
 
-    # A4 mandates picking the best representation off the test scores, which
-    # makes the headline a maximum over several test numbers and therefore
-    # optimistically biased. Record the bias and the honest alternatives rather
-    # than reporting only the flattering maximum.
     results["selection_bias"] = selection_bias_report(
         results["by_bottleneck"],
         get_test=lambda v: v["test_accuracy"],
@@ -297,8 +270,6 @@ def run_ae_classify(data, kind, task_id, outdir="results",
           f"validation would pick k={_sb['selected_by_validation']} "
           f"({100 * _sb['selected_by_validation_accuracy']:.2f}%)")
 
-    # ── Task-3c / Task-4c comparison figures ─────────────────────────────────
-    # Accuracy vs bottleneck answers "which representation is best".
     plots.dimension_bars(
         {"test accuracy": [100 * results["by_bottleneck"][b]["test_accuracy"]
                            for b in bottlenecks],
@@ -311,8 +282,6 @@ def run_ae_classify(data, kind, task_id, outdir="results",
         ref=100 * A3_TEST_ACC,
         ref_label="A3 baseline 98.76%")
 
-    # Epochs to convergence, so each representation's cost is visible next to
-    # its accuracy instead of being an invisible cost.
     plots.dimension_bars(
         {"epochs": [results["by_bottleneck"][b]["architectures"][
             results["by_bottleneck"][b]["best_arch"]]["epochs_run"]
@@ -322,7 +291,6 @@ def run_ae_classify(data, kind, task_id, outdir="results",
         os.path.join(dirs["comparison"], f"{tag}_epochs_vs_bottleneck.png"),
         ylabel="epochs (lower is cheaper)")
 
-    # Architecture x bottleneck heatmaps, the comparison table in figure form.
     plots.accuracy_heatmap(
         archs, [str(b) for b in bottlenecks],
         [[100 * results["by_bottleneck"][b]["architectures"][a]["val_acc"]
@@ -339,9 +307,6 @@ def run_ae_classify(data, kind, task_id, outdir="results",
         os.path.join(dirs["comparison"], f"{tag}_heatmap_test.png"),
         rowlabel="architecture", collabel="bottleneck k")
 
-    # Superimposed loss curves: per bottleneck across the selected architecture,
-    # and per architecture across bottlenecks. The second form shows whether an
-    # architecture is consistently good or good only at one bottleneck size.
     hist, labels = [], []
     for b in bottlenecks:
         a = results["by_bottleneck"][b]["best_arch"]
@@ -374,7 +339,6 @@ def run_ae_classify(data, kind, task_id, outdir="results",
         f"Task-{task_id}: train minus test accuracy by bottleneck (generalisation)",
         os.path.join(dirs["comparison"], f"{tag}_generalisation_gap.png"))
 
-    # ── Task-3d / Task-4d: comparisons ────────────────────────────────────
     cmp_ = {"a3_test_acc": A3_TEST_ACC,
             "task_test_acc": results["best_test_accuracy"],
             "gap_vs_a3_pp": 100 * (results["best_test_accuracy"] - A3_TEST_ACC)}

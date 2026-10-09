@@ -43,11 +43,10 @@ from data import load_splits, CLASS_NAMES
 from models import CLASSIFIER_ARCHS, build_classifier, build_autoencoder
 from run_tracker import atomic_write_text
 
-# Same constants the main pipeline will use, so the pilot measures the real thing.
 INIT_SEED = 42
 TOL = 1e-4
-AE_BOTTLENECK = 256  # heaviest required bottleneck
-CLASSIFIER_ARCH = "5L_A"  # widest classifier in the 4-arch set (5 hidden layers)
+AE_BOTTLENECK = 256
+CLASSIFIER_ARCH = "5L_A"
 
 
 def _sync(device):
@@ -76,12 +75,8 @@ def time_forward_backward(model, X, y, device, opt_fn, epochs=12):
     """
     criterion = nn.CrossEntropyLoss()
     model.to(device)
-    # opt_fn is a FACTORY (torch.optim.Adam), not an instantiated optimizer:
-    # passing an already-built optimizer here re-binds the loop variable to
-    # None on the next call and then calls methods on None.
     opt = opt_fn(model.parameters(), lr=LR_GRID[0])
 
-    # Warm-up: first call pays context setup + kernel selection.
     model.train()
     opt.zero_grad(set_to_none=True)
     loss = criterion(model(X), y)
@@ -159,7 +154,6 @@ def convergence_probe(build_fn, X_tr, y_tr, X_va, y_va, device, lrs, epochs, tag
             losses.append(loss.item())
             accs.append(acc)
 
-            # Replicate the assignment's stopping rule exactly.
             if ep > 0 and abs(losses[-1] - losses[-2]) < TOL:
                 stopped_early = ep + 1
                 break
@@ -175,9 +169,6 @@ def convergence_probe(build_fn, X_tr, y_tr, X_va, y_va, device, lrs, epochs, tag
             "val_acc_max": max(accs),
             "stopped_early_at": stopped_early,
             "chance_level": round(100.0 / len(CLASS_NAMES), 4),
-            # "Learned" means beat chance by a real margin. Comparing an accuracy
-            # (0-1) against 1.5 x chance_PERCENT (30.0) is always False, which
-            # is why the first pilot run wrongly reported that nothing learned.
             "learned": max(accs) > 3.0 * (1.0 / len(CLASS_NAMES)),
         })
         print(f"    lr={lr:<8} ep={len(losses):<4} "
@@ -224,7 +215,6 @@ def main():
 
     findings = {"device": str(device), "classes": CLASS_NAMES}
 
-    # ── 2. memory + step time at full batch ──────────────────────────────
     print("\n[2/4] memory + step time (full batch, 11,385 samples)")
     _reset_peak(device)
     torch.manual_seed(INIT_SEED)
@@ -260,7 +250,6 @@ def main():
         "ep_per_s": 1/c_warm, "peak_vram_mb": clf_mem,
     }
 
-    # ── 3. batch-size comparison ─────────────────────────────────────────
     print("\n[3/4] batch-size comparison (does bs change step cost much?)")
     bs_results = []
     for bs in [int(b) for b in args.bs.split(",") if b != "full"]:
@@ -279,7 +268,6 @@ def main():
                            "s_per_epoch": warm_s*steps_per_epoch})
     findings["batch_size"] = bs_results
 
-    # ── 4. does full-batch + lr actually learn? ──────────────────────────
     print(f"\n[4/4] convergence check over {args.epochs} epochs "
           f"(the A3 Batch-GD failure mode)")
     print("  chance level = %.2f%%" % (100.0 / len(CLASS_NAMES)))
@@ -295,7 +283,6 @@ def main():
         X_tr[sub], y_tr[sub], X_va, y_va, device, LR_GRID, args.epochs, "bs256")
     findings["convergence"] = conv
 
-    # ── verdict ──────────────────────────────────────────────────────────
     print("\n" + "=" * 72)
     ae_rate = findings["ae_3hidden"]["ep_per_s"]
     cl_rate = findings["classifier_widest"]["ep_per_s"]

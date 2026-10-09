@@ -43,81 +43,19 @@ from models import make_noise
 from run_tracker import atomic_save
 
 TOL = 1e-4
-# Early stopping requires the tolerance to hold over a WINDOW of consecutive
-# epochs, not on a single epoch pair.
-#
-# Why a window is necessary (measured on this dataset): the 5L_A classifier
-# [64,32,16,8,4] stalls with loss 1.6089 at epoch 13 and then OSCILLATES upward
-# (1.6091, 1.6096, 1.6102, 1.6108, 1.6111). Adam's momentum swinging in a local
-# plateau produced a single-epoch |dL| of 1.2e-05, under the 1e-4 tolerance, so a
-# one-epoch test declared convergence while validation accuracy was still exactly
-# 20.00% (chance). The loss was flat AND RISING - the opposite of convergence.
-#
-# A single consecutive-epoch difference cannot distinguish:
-#   - genuine convergence (loss settled, small change persists), from
-#   - a plateau the optimizer is oscillating inside of (small change transiently).
-# Requiring the criterion to hold for PATIENCE consecutive epochs distinguishes
-# them: real convergence sustains the small delta, an oscillation does not.
-#
-# This is the same defect that made Assignment-3's Batch GD "converge" in 2
-# epochs at 20% accuracy. It is inherited behaviour that needed correcting, not
-# reproduced deliberately.
 STOP_PATIENCE = 15
 
-# Minimum epochs before the stopping rule may fire at all.
-#
-# The absolute criterion |dL| < 1e-4 is scale-blind, and that bites hardest on
-# the autoencoders. Measured on 3hidden_k=256: the MSE is 0.067171 at epoch 29
-# and still falling by ~9e-5 per epoch. 9e-5 is BELOW the 1e-4 tolerance, so the
-# rule fired at epoch 39 with test reconstruction error 0.0668 - against 0.0313
-# for k=128 and 0.0185 for the 1-hidden k=256. The extra capacity was stopped
-# before it was used, and because Task-4 consumes this encoder, three of four
-# classifiers on that representation then sat at 20% (chance).
-#
-# On an MSE of 0.067 a 9e-5 step is 0.13% per epoch - meaningful progress, not a
-# plateau. The identical delta on a cross-entropy of 1.6 would be 0.006% and
-# genuinely converged. A single absolute tolerance cannot serve both loss scales.
-#
-# The assignment mandates the absolute 1e-4 criterion, so it is kept verbatim.
-# An earlier revision added an epoch FLOOR before the rule could fire, on the
-# theory that it would suppress the premature stops. Both call sites now pass
-# min_epochs=0, because it emerged that the floor was binding on runs whose
-# classifier trained properly (stopping them early for no benefit) and was
-# unnecessary once the AEs were moved onto the plateau rule. It was therefore
-# dead code and has been removed rather than left to describe behaviour the
-# code does not have.
 
-CLASSIFIER_LR = 0.01     # pilot-validated; 0.001 sits at chance at full batch
-AUTOENCODER_LR = 0.001   # A4 mandates Adam; pilot-validated
-# Autoencoders use a RELATIVE stopping tolerance; classifiers keep A3's absolute
-# one. Measured on real 1500-epoch traces, the absolute rule stops the AEs 8x
-# short of their achievable reconstruction error because MSE and cross-entropy
-# differ in scale by ~100x. See _ConvergenceWatch.__init__ for the traces.
+CLASSIFIER_LR = 0.01
+AUTOENCODER_LR = 0.001
 AE_REL_TOL = 1e-3
-# Window, in epochs, over which "best loss so far" must stop improving.
-#
-# Why a WINDOW and not an epoch-to-epoch delta:
-#   - an epoch-to-epoch delta cannot tell a plateau from steady slow descent.
-#     Measured: under relative tolerance the 1-hidden autoencoders were still
-#     improving ~0.1% per epoch when it fired, and replaying the identical run to
-#     12,000 epochs reached 1.83x lower reconstruction error.
-#   - the denoising AEs resample their corruption mask every epoch, so the
-#     per-epoch delta jitters far above the threshold. Neither denoiser ever
-#     completed the required streak: both ran the full 10,000 epochs. The
-#     criterion was silently disabled exactly where A4 requires it most.
-#
-# "Best loss has not improved over the last WINDOW epochs" is immune to both:
-# it is scale-free (a ratio), it is immune to per-epoch jitter (it tracks the
-# monotone best, not the noise), and under geometric decay L_t = L_0 g^t the
-# windowed improvement is (1 - g^W), which shrinks to zero only when the decay
-# genuinely stops.
 AE_PLATEAU_WINDOW = 50
-MAX_EPOCHS = 10000       # measured affordable: ~4.6 min worst-case AE
+MAX_EPOCHS = 10000
 CHECKPOINT_EVERY = 10
 LOG_EVERY = 100
 
 CLASSIFIER_OPT = torch.optim.Adam
-AE_OPT = torch.optim.Adam   # A4 Task-2b mandates Adam for autoencoders
+AE_OPT = torch.optim.Adam
 
 
 def _accuracy(logits, y):
@@ -127,14 +65,6 @@ def _accuracy(logits, y):
 CHANCE = 1.0 / 5
 
 
-# A run below this validation accuracy is not a converged model, it is a failed
-# one. Calibrated against the runs actually observed on this dataset: legitimate
-# results sit at 97-99% and the 5L_A architecture's failures sit at 58.8%, 59.6%
-# and 77.9%. 85% sits cleanly between those two groups - far enough above every
-# failure to catch them all, far enough below every real result to never risk
-# mislabelling a success. It is specific to this dataset rather than a general
-# rule, which is deliberate: a fixed multiple of chance cannot separate them,
-# since 77.9% is nearly 4x chance.
 DEGENERATE_BELOW = 0.85
 
 
@@ -240,24 +170,9 @@ class _ConvergenceWatch:
                  min_epochs=0, mode="abs", window=None):
         self.tol = tol
         self.patience = patience
-        # Epochs that must elapse before the criterion is even considered. Zero
-        # by default and zero at every call site - the MIN_EPOCHS_BEFORE_STOP
-        # floor it once refused to work below was removed as dead code.
         self.min_epochs = min_epochs
-        # "abs"     -> |L_t - L_{t-1}| < tol                   (A3's literal rule)
-        # "rel"     -> |L_t - L_{t-1}| < tol * |best loss|     (scale-free delta)
-        # "plateau" -> best loss has not improved by more than tol (relative)
-        #              over a window of `window` epochs. Immune to per-epoch
-        #              jitter, so it works with the stochastic denoising objective.
-        #
-        # The three are NOT interchangeable. Replaying real 1500-epoch traces:
-        #   1hidden k=256  abs1e-4 stops ep186 loss 0.0181 | rel1e-3 stops ep1030
-        #                   loss 0.0023; but continuing to 12,000 epochs reaches
-        #                   0.00195, so "rel" also stops short.
-        # For the autoencoders only "plateau" certifies convergence.
         self.mode = mode
         self.window = window or patience
-        # Monotone best-loss history, for the plateau test.
         self._best_hist = collections.deque(maxlen=self.window + 1)
         self.streak = 0
         self.prev_loss = None
@@ -269,13 +184,6 @@ class _ConvergenceWatch:
     def state_dict(self):
         return {"streak": self.streak, "prev_loss": self.prev_loss,
                 "best_loss": self.best_loss, "improved": self.improved,
-                # The plateau window IS the criterion's state, not decoration.
-                # Without it a resumed run falls back to `window=patience` (or
-                # whatever the constructor defaults to) and re-evaluates the
-                # history from a truncated deque, so it can stop far earlier
-                # than the rule intends. `_best_hist` is likewise part of the
-                # state: after a resume it is empty, and an empty deque silently
-                # disables the plateau test.
                 "mode": self.mode, "window": self.window,
                 "min_epochs": self.min_epochs, "triggered": self.triggered,
                 "best_hist": list(self._best_hist)}
@@ -285,8 +193,6 @@ class _ConvergenceWatch:
         self.prev_loss = sd.get("prev_loss")
         self.best_loss = sd.get("best_loss", float("inf"))
         self.improved = sd.get("improved", False)
-        # Prefer the saved rule over the constructor's default, so a run resumed
-        # from a checkpoint keeps the criterion it was actually trained under.
         self.mode = sd.get("mode", self.mode)
         self.window = sd.get("window", self.window)
         self.min_epochs = sd.get("min_epochs", self.min_epochs)
@@ -305,8 +211,6 @@ class _ConvergenceWatch:
         self._best_hist.append(self.best_loss)
 
         if self.mode == "plateau":
-            # Fire when the monotone best loss has not improved by more than
-            # `tol` (relative) across the whole window. Immune to jitter.
             if len(self._best_hist) > self.window:
                 old = self._best_hist[0]
                 gain = (old - self.best_loss) / max(abs(old), 1e-12)
@@ -323,7 +227,6 @@ class _ConvergenceWatch:
                 self.streak = 0
         self.prev_loss = loss
 
-        # The min_epochs floor: below it the streak is tracked but cannot trigger.
         if epoch + 1 >= self.min_epochs and self.streak >= self.patience:
             self.triggered = True
             self.trigger_epoch = epoch
@@ -393,9 +296,6 @@ def train_classifier(model, data, arch_name="arch", tracker=None,
     criterion = nn.CrossEntropyLoss()
 
     start_epoch = 0
-    # Resume in place when a checkpoint exists. The epoch counter, Adam moments,
-    # and elapsed clock all come from the checkpoint, so a resumed run continues
-    # the same trajectory instead of restarting Adam's bias correction.
     if resume and tracker is not None and tracker.has_checkpoint():
         ckpt = torch.load(tracker.ckpt_path, map_location=device, weights_only=False)
         if "model_state_dict" in ckpt:
@@ -405,19 +305,11 @@ def train_classifier(model, data, arch_name="arch", tracker=None,
             start_epoch = ckpt.get("epoch", 0) + 1
             if tracker.history:
                 tracker.first_epoch_time = ckpt.get("start_time", tracker.first_epoch_time)
-            # Restore the RUN HISTORY, not just the model. A fresh RunTracker
-            # starts with an empty list, so a resumed run would otherwise report
-            # "history": [] and every figure built from it would be empty (and
-            # loss_and_accuracy, which indexes history[0], would crash). The
-            # checkpoint carries the full curve for exactly this reason.
             if ckpt.get("history"):
                 tracker.history = ckpt["history"]
             tracker.log(f"RESUME {arch_name} from epoch {start_epoch} "
                         f"({len(tracker.history)} epochs of history restored)")
 
-    # A checkpoint at or past max_epochs means there is nothing left to do. The
-    # loop below would not execute, leaving `epoch` unbound - hence this branch.
-    # This is the normal path when re-running a finished job, not an edge case.
     if start_epoch >= max_epochs:
         final_val = _accuracy(model.eval()(X_va).detach(), y_va)
         tracker.log(f"SKIP {arch_name}: already at epoch {start_epoch} "
@@ -437,13 +329,8 @@ def train_classifier(model, data, arch_name="arch", tracker=None,
         }
 
     stopped_early = False
-    # Classifiers: A3-mandated ABSOLUTE tolerance. Cross-entropy starts near 1.6,
-    # so 1e-4 is a genuine 0.006% - the literal inherited rule is appropriate.
     watch = _ConvergenceWatch(tol=tol, patience=patience, mode="abs",
                              min_epochs=0)
-    # Restore the patience streak from the checkpoint. Without this, a resumed run
-    # restarts the counter at zero and can stop EARLIER than the criterion
-    # intends, which silently changes results depending on where a crash fell.
     if resume and tracker is not None and tracker.has_checkpoint():
         _ck = torch.load(tracker.ckpt_path, map_location="cpu",
                          weights_only=False)
@@ -481,7 +368,6 @@ def train_classifier(model, data, arch_name="arch", tracker=None,
             tracker.log(f"  {arch_name} ep={epoch} loss={loss_val:.5f} "
                         f"val_acc={val_acc:.4f}")
 
-        # Checkpoint on cadence and always on the final epoch.
         if tracker is not None and (
             (epoch + 1) % checkpoint_every == 0 or epoch == max_epochs - 1
         ):
@@ -489,8 +375,6 @@ def train_classifier(model, data, arch_name="arch", tracker=None,
                              extra={"arch_name": arch_name, "lr": lr},
                              watch=watch)
 
-        # Early stop, but only once |dL| < tol has held for `patience` CONSECUTIVE
-        # epochs - see _ConvergenceWatch for the measured failure this prevents.
         if watch.update(loss_val, epoch):
             stopped_early = True
             if tracker is not None:
@@ -501,16 +385,11 @@ def train_classifier(model, data, arch_name="arch", tracker=None,
 
     final_val = _accuracy(model.eval()(X_va).detach(), y_va)
     degenerate = flag_degenerate(final_val)
-    # A collapsed run is NOT reported as success. Keeping "converged" as the
-    # status would let a chance-level model read as a valid result in the tables.
     if degenerate:
         state = "degenerate"
     else:
         state = "converged" if stopped_early else "max_epochs"
 
-    # Log the warning BEFORE finish(), because finish() closes the log file and
-    # a subsequent log() raises ValueError on the closed handle. That ordering
-    # bug crashed the run after training had already finished successfully.
     if tracker is not None and degenerate:
         tracker.log(
             f"WARNING {arch_name}: finished at {100 * final_val:.2f}% "
@@ -518,14 +397,6 @@ def train_classifier(model, data, arch_name="arch", tracker=None,
             f"vanishing-gradient note in train.flag_degenerate. Excluded "
             f"from best-architecture selection.")
     if tracker is not None:
-        # model/optimizer are passed so finish() writes the FINAL weights: without
-        # this the checkpoint trails the reported metrics by up to CHECKPOINT_EVERY-1
-        # epochs and cannot be used to verify the results.
-        # `extra` carries the identity metadata the periodic save wrote - arch
-        # name, lr and the convergence watch state. Without it the final
-        # checkpoint loses run_name/lr/watch_state that the periodic saves had,
-        # so a resume after the last save would lose the plateau window and the
-        # convergence streak.
         tracker.finish(status=state, model=model, optimizer=optimizer,
                         extra={"arch_name": arch_name, "lr": lr},
                         watch=watch,
@@ -592,8 +463,6 @@ def denoising_error(model, X, noise_level, batch_size=4096, seed=1234,
     base_total = 0.0
     for i in range(0, X.size(0), batch_size):
         xb = X[i:i + batch_size]
-        # A fixed generator per call batch keeps the corruption identical across
-        # calls for a given split.
         g = torch.Generator(device=X.device).manual_seed(seed + i)
         noisy = make_noise(xb, noise_level, g)
         total += ((model(noisy) - xb) ** 2).mean(dim=1).sum().item()
@@ -664,16 +533,11 @@ def train_autoencoder(model, data, run_name="ae", tracker=None,
             start_epoch = ckpt.get("epoch", 0) + 1
             if tracker.history:
                 tracker.first_epoch_time = ckpt.get("start_time", tracker.first_epoch_time)
-            # Restore the run history - see the identical note in
-            # train_classifier. Without it a resumed run reports an empty curve
-            # and the plots built from it are blank or crash.
             if ckpt.get("history"):
                 tracker.history = ckpt["history"]
             tracker.log(f"RESUME {run_name} from epoch {start_epoch} "
                         f"({len(tracker.history)} epochs of history restored)")
 
-    # Already trained past the budget: nothing to do. Without this the loop body
-    # never runs and `epoch` is left unbound below.
     if start_epoch >= max_epochs:
         recon = {
             split: reconstruct_error(model, data[f"X_{split}"])
@@ -701,12 +565,8 @@ def train_autoencoder(model, data, run_name="ae", tracker=None,
     from models import make_noise
 
     stopped_early = False
-    # Autoencoders: RELATIVE tolerance (1e-3 of the best loss seen). The absolute
-    # rule measurably fires ~8x too early on MSE — see _ConvergenceWatch.__init__
-    # for the replayed 1500-epoch traces that justify this.
     watch = _ConvergenceWatch(tol=AE_REL_TOL, patience=patience, mode="plateau",
                              window=AE_PLATEAU_WINDOW, min_epochs=0)
-    # Restore the patience streak; see train_classifier for why.
     if resume and tracker is not None and tracker.has_checkpoint():
         _ck = torch.load(tracker.ckpt_path, map_location="cpu",
                          weights_only=False)
@@ -719,7 +579,6 @@ def train_autoencoder(model, data, run_name="ae", tracker=None,
 
         x_in = make_noise(X_tr, noise_level, noise_generator) if noise_level > 0 else X_tr
         rec = model(x_in)
-        # Target is always the CLEAN image, even in the denoising case.
         loss = criterion(rec, X_tr)
         _guard_finite(f"{run_name} loss", loss, epoch)
         loss.backward()
@@ -740,17 +599,9 @@ def train_autoencoder(model, data, run_name="ae", tracker=None,
                                     "noise_level": noise_level},
                              watch=watch)
 
-        # Patience-window early stopping; see _ConvergenceWatch. Single-epoch
-        # testing is unreliable because an oscillating plateau can dip below tol
-        # transiently, exactly as the 5L_A classifier did at chance accuracy.
         if watch.update(loss_val, epoch):
             stopped_early = True
             if tracker is not None:
-                # Report the rule that ACTUALLY ran. Previously the AE logs and
-                # every AE figure printed the module-level absolute TOL while the
-                # autoencoders were using a relative threshold ~10x tighter, so
-                # the convergence claim understated the strictness by an order of
-                # magnitude.
                 if watch.mode == "plateau":
                     rule = (f"best loss improved < {100 * watch.tol:.3g}% "
                             f"over {watch.window} epochs")
@@ -762,17 +613,10 @@ def train_autoencoder(model, data, run_name="ae", tracker=None,
                             f"({rule})")
             break
 
-    # Post-training reconstruction error on all three splits, as A4 Task-2c
-    # requires (computed AFTER training, not during).
     recon = {
         split: reconstruct_error(model, data[f"X_{split}"])
         for split in ("train", "val", "test")
     }
-    # For the DENOISING AE only, also report the corrupted-input error and the
-    # copy-the-input baseline. The clean-input number above is what A4's generic
-    # "average reconstruction errors" asks for and is what the tables show, but on
-    # its own it does not measure denoising - it measures how good a plain
-    # autoencoder the denoising objective happened to produce.
     denoise = None
     if noise_level > 0:
         denoise = {
@@ -792,9 +636,6 @@ def train_autoencoder(model, data, run_name="ae", tracker=None,
             metrics["test_denoise_err"] = \
                 denoise["test"]["corrupted_input_error"]
             metrics["test_copy_baseline"] = denoise["test"]["copy_baseline"]
-        # As for the classifier: save the FINAL weights so the checkpoint on disk
-        # is exactly the model these metrics describe, carrying the same identity
-        # metadata (run name, lr, noise, watch state) the periodic save wrote.
         tracker.finish(status=state, model=model, optimizer=optimizer,
                        extra={"run_name": run_name, "lr": lr,
                               "noise_level": noise_level},
