@@ -1,11 +1,12 @@
 PYTHON ?= python
 
-.PHONY: help quick train verify report check clean
+.PHONY: help quick train verify verify-claims report check clean
 
 help:
 	@echo "quick    - smoke test the whole pipeline (~1 min, numbers meaningless)"
 	@echo "train    - the real run (~22 min), writes results_final/"
 	@echo "verify   - re-check the run's own artefacts for the reported invariants"
+	@echo "claims   - re-check every number quoted in the report against the run"
 	@echo "report   - compile report/report.tex twice (cross-refs resolve on pass 2)"
 	@echo "check    - compile-check and import-check every module"
 	@echo "clean    - remove transient run outputs"
@@ -18,6 +19,9 @@ train:
 
 verify:
 	$(PYTHON) scripts/verify.py results_final
+
+verify-claims:
+	$(PYTHON) scripts/verify_report_claims.py
 
 report:
 	cd report && pdflatex -interaction=nonstopmode report.tex && pdflatex -interaction=nonstopmode report.tex

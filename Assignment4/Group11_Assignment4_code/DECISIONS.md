@@ -440,6 +440,49 @@ at least once on data that should fail it.
 
 ---
 
+## ADR-019 — Ten of the report's own numbers were wrong, and only an automated check found them
+
+**Status:** Fixed. All 58 checks now pass.
+
+**Problem.** The inference blocks under each figure were written by reading the figures.
+Every one looked right, and every one was checked against the code and the JSON. Neither
+is enough. `scripts/verify_report_claims.py` re-derives 58 quantitative claims from
+`results_final/` and found ten errors, six of them of the same kind:
+
+| claim | said | was |
+|---|---|---|
+| 5<->6 confusion mass | 32 of 67 | **16** of 67 |
+| pairs carrying <5 errors | five | **three** |
+| Task-1 accuracy spread | 1.2 pp | **1.0 pp** |
+| 3-hidden recon vs 1-hidden at k=32 | 3hidden worse | **3hidden better** |
+| 1-hidden recon ratio k=256:k=32 | one seventh | **one tenth** |
+| Task-3 / Task-4 total errors | 19 / 17 | **63 / 57** |
+| Task-3 largest cell | 5->6 = 10 | **6->5 = 10**, 5->6 = 7 |
+| Task-1 matrix asymmetry | 6->5 exceeds 5->6 | **they are equal**, both 8 |
+| PCA vs Task-3 at k=32 | PCA ahead | **PCA behind** |
+| hardest digit | 7 for every task | **7 only in Task 1**; 6 in Tasks 3 and 4 |
+
+**Root cause.** The first error is the same double-count that ADR-011 records: the
+symmetrised matrix already holds the pair total, so `obs[i,j] + obs[j,i]` doubles it. It was
+fixed in the figure code and reintroduced in the prose written from that figure. The rest
+are the ordinary failure of reading a value off a chart and recording it --- a bar read to
+the nearest "about", a trend read off a line where no reversal exists, a hardest class
+asserted where the ordering is not actually stable.
+
+**Decision.** Every number in the prose is now produced by a script rather than by eye.
+`scripts/verify_report_claims.py` is the mechanism, and it fails loudly when a claim is
+wrong rather than when it is merely absent --- the same lesson as ADR-017, applied one
+level up.
+
+**What did not change.** Every headline result in the tables was already verified against
+the run's own artefacts by `scripts/verify.py`. The errors were confined to the new
+interpretive prose, which is exactly the part that had no automated check behind it.
+
+**Lesson recorded.** Prose is code. A number written in a sentence is a number that
+nothing will ever recompute unless something is made to recompute it.
+
+---
+
 ## ADR-018 — The redraw said it drew the panels and did not
 
 **Status:** Fixed.

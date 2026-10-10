@@ -226,11 +226,11 @@ information is present, but a single mean vector per class retains only a small 
 \infer{The left panel shows the class means are nearly equidistant --- every off-diagonal entry lies
 between $3.9$ and $6.3$, a spread of only $60\%$ of the smallest distance --- so no pair is
 dramatically closer than any other. The centre panel shows the confusion mass is emphatically
-\emph{not} evenly spread: $5\leftrightarrow6$ carries $32$ of the $67$ off-diagonal errors while
-five pairs carry under $5$ each. The right panel puts the two orderings side by side and the points
-scatter away from the diagonal, giving Spearman $\rho=-0.22$. Had proximity driven confusion the
-points would hug the diagonal with a positive slope; instead the single most-confused pair sits at
-proximity rank $4$, and the closest pair $4\leftrightarrow7$ is only rank $2$ in confusion.}
+\emph{not} evenly spread: $5\leftrightarrow6$ carries $16$ of the $67$ off-diagonal errors while
+three pairs carry $2$, $2$ and $3$. The right panel puts the two orderings side by side and the
+points scatter away from the diagonal, giving Spearman $\rho=-0.22$. Had proximity driven confusion
+the points would hug the diagonal with a positive slope; instead the single most-confused pair sits
+at proximity rank $4$, and the closest pair $4\leftrightarrow7$ is only rank $2$ in confusion.}
 \caption{Prototype proximity does not predict which pairs get confused.  Left: Euclidean
 distance between the five class means of Fig.~\ref{fig:data:prototypes}.  Centre: off-diagonal
 confusion mass for Task-1's selected configuration.  Right: the two orderings against each other;
@@ -703,9 +703,9 @@ misread.
 \infer{Read this beside Fig.~\ref{fig:task1:variance} and the inversion is the finding. More
 retained variance does not mean more accuracy: the $k=32$ bars are the tallest and every increase
 in $k$ makes them shorter, even as $\nu(k)$ rises to $97.9\,\%$ at $k=256$. The bars are also
-suspiciously flat --- all four sit between $97\%$ and $98.5\%$ against a $98.76\%$ baseline line
---- which is the effect of a $y$-axis starting at zero: the real spread of $1.2$~pp is invisible at
-this scale, and the figure understates its own result.}
+suspiciously flat --- all four sit between $97.2\%$ and $98.3\%$ against a $98.76\%$ baseline line
+--- which is the effect of a $y$-axis starting at zero: the real spread of exactly $1.0$~pp is
+invisible at this scale, and the figure understates its own result.}
 \caption{Task 1: validation accuracy of the selected classifier against the PCA code width $k$.
 Compared directly with Figure~\ref{fig:task3:acc} in Section~\ref{sec:results}.}
 \label{fig:task1:acc}
@@ -740,10 +740,12 @@ alone.\label{sec:obs:falsing}
 \maybeinc[width=0.78\linewidth]{task1/03_confusion_matrices/task1_k32_3L_B_confusion_test.png}
 \infer{The diagonal is visually dominant and every off-diagonal cell is pale, which is the direct
 visual statement that $97$--$99\,\%$ of each class is correctly identified. The informative cells
-are the few that are not: the $5\leftrightarrow6$ pair carries the largest mass, and the
-$4\leftrightarrow7$ pair is second. Rows are true classes and columns are predictions, so the
-matrix is not symmetric --- the $6$-to-$5$ and $5$-to-$6$ cells differ, meaning a real $5$ is called
-a $6$ more often than the reverse.}
+are the few that are not: $67$ errors in total, of which the $5\leftrightarrow6$ pair carries $16$
+and the $4\leftrightarrow7$ pair carries $12$. The largest single cell is $8$, and that value occurs
+three times --- for $5\to6$, for $6\to5$ and for $4\to7$ --- so this matrix is in fact very nearly
+symmetric despite the row/column axes differing. Symmetry here is not a regularity of the data
+but a consequence of all the counts being tiny: at this error rate the direction of an individual
+confusion carries no information.}
 \caption{Task 1: test confusion matrix of the selected configuration, $k=32$ with the 3L\_B
 classifier.  Rows are true digits, columns predicted digits, and both are digit values rather than
 class indices.  The $5\leftrightarrow6$ pair carries the largest off-diagonal mass.}
@@ -782,10 +784,12 @@ Three-hidden  & 256  & 0.001330 & 0.002317 & 0.002346 & 0.001016 \\
 \maybeinc[width=0.84\linewidth]{task2/05_reconstruction_error/task2_recon_error_all.png}
 \infer{Eight architectures are grouped three times, once per split, and the comparison to make is
 \emph{within} each split rather than across them. The one-hidden family falls monotonically with
-$k$ --- the $k=256$ bar is roughly a seventh of the $k=32$ bar --- while the three-hidden family
-starts worse at small $k$ and converges to almost the same value at $k=256$. Adding two hidden
-layers buys nothing here; what buys reconstruction quality is bottleneck width. The train, val and
-test groups are near-identical, so the autoencoders are not overfitting either.}
+$k$ --- the $k=256$ bar is one tenth of the $k=32$ bar --- while the three-hidden family starts
+\emph{better} at small $k$ ($0.00654$ against $0.00935$ at $k=32$) and crosses over, ending
+worse at $k=256$ ($0.00235$ against $0.00093$). Depth helps the narrow bottleneck and hurts the
+wide one, so the claim worth checking is not that one family dominates but that the two cross
+over; width, not depth, is what dominates the absolute error. The train, val and test groups are
+near-identical, so the autoencoders are not overfitting either.}
 \caption{Task 2: post-training reconstruction error $E_{\mathrm{rec}}$ against bottleneck width $k$
 for both families and all three splits.  The $y$-axis is shared, so the separation between families
 is directly comparable.}\label{fig:task2:err}
@@ -867,10 +871,10 @@ widths, different code.}\label{fig:task3:acc}
 
 \begin{figure}[htbp]\centering
 \maybeinc[width=0.78\linewidth]{task3/01_training_curves/task3_k32_3L_A_loss_accuracy.png}
-\infer{Compare the two panels' horizontal extents rather than their values: this run stops at $393$
-epochs where the PCA run of Fig.~\ref{fig:conv:clf} needed $293$ at $k=32$, and the early
-behaviour is visibly different. Accuracy sits at chance for the first $10$ epochs, then climbs in
-one sharp jump to about $95\%$ around epoch $40$, then plateaus. The jump is the classifier
+\infer{Compare the two panels' horizontal extents rather than their values: this run stops at $205$
+epochs where the PCA run of Fig.~\ref{fig:conv:clf} needed $266$ at $k=32$, so the frozen code is
+actually \emph{faster} to fit than raw pixels here. Accuracy sits at chance for the first few
+epochs, then climbs in one sharp jump to about $95\%$, then plateaus. The jump is the classifier
 discovering whichever directions of the frozen code carry the class information; the absence of
 further improvement afterwards means the code, not the classifier, is the binding constraint.}
 \caption{Task 3 convergence for the selected configuration ($k=32$, 3L\_A).  The classifier is
@@ -894,10 +898,12 @@ best width ($98.23\,\%$) rather than above it.
 \begin{figure}[htbp]\centering
 \maybeinc[width=0.78\linewidth]{task3/03_confusion_matrices/task3_k32_3L_A_confusion_test.png}
 \infer{Structurally the same figure as Fig.~\ref{fig:task1:cm} and that is the point --- the
-learned code produces the same confusion pattern, not a different one. The dominant cell is again
-$5\leftrightarrow6$, now with $17$ errors where PCA at $k=32$ had $16$, and the second is again
-$4\leftrightarrow7$. Because the two matrices are near-identical, the errors are a property of the
-dataset's intrinsic class overlap rather than of any particular representation.}
+learned code produces the same confusion pattern, not a different one. The dominant pair is again
+$5\leftrightarrow6$ with $17$ errors against PCA's $16$, and the pair total error count is $63$
+against PCA's $67$. What is \emph{not} carried over is the asymmetry: Task~1 had $5\to6$ and
+$6\to5$ equal at $8$, whereas here $6\to5$ is $10$ against $5\to6$ of $7$, and digit $6$'s recall
+drops to $97.50\%$ --- the lowest of any digit in any task. So the code has concentrated its
+errors onto one direction of one pair rather than inventing a new failure mode.}
 \caption{Task 3: test confusion matrix of the selected configuration, $k=32$ with the 3L\_A
 classifier.  Rows are true digits, columns predicted digits.  Compare with
 Figure~\ref{fig:task1:cm} at identical labels.}
@@ -971,11 +977,13 @@ baseline and this configuration sits $0.2620$~pp below it.
 \begin{figure}[htbp]\centering
 \maybeinc[width=0.78\linewidth]{task4/03_confusion_matrices/task4_k64_4L_A_confusion_test.png}
 \infer{The off-diagonal cells are visibly paler than in Fig.~\ref{fig:task3:cm}, and the count
-confirms it: $17$ total errors here against $19$ in Task 3, with the largest single cell
-$5\rightarrow6$ now carrying $9$ rather than $10$. The pattern of \emph{which} pairs are confused is
-unchanged, so the deeper code has not redistributed the errors onto different digits --- it has
-reduced them uniformly. That is what makes the third confusion matrix in the sequence evidence of
-an inherited error structure rather than a random one.}
+confirms it: $57$ total errors here against $63$ in Task~3 and $67$ in Task~1 --- a monotonic
+reduction across the three representations, with $5\leftrightarrow6$ holding steady at $17$ while
+the $4\leftrightarrow7$ pair collapses from $11$ to $6$. The pattern of \emph{which} pairs are
+confused is unchanged, so the deeper code has not redistributed the errors onto different digits ---
+it has reduced them, and reduced them preferentially in the pair that PCA and the one-hidden code
+both found second-hardest. That is what makes this the third matrix in the sequence evidence of an
+inherited error structure rather than a random one.}
 \caption{Task 4: test confusion matrix of the selected configuration, $k=64$ with the 4L\_A
 classifier.  Compare with Figures~\ref{fig:task1:cm} and~\ref{fig:task3:cm}.}
 \label{fig:task4:cm}
@@ -1167,11 +1175,13 @@ A3 & Raw pixels, A\_128\_64\_32 & 784 & 98.84 & 98.76 & --- \\
 \begin{figure}[htbp]\centering
 \maybeinc[width=0.90\linewidth]{00_summary/summary_accuracy_vs_dimension.png}
 \infer{The three lines cross each other, which is the single most important feature of this
-figure. No representation dominates at every width: PCA starts ahead at $k=32$ but falls below
-both autoencoders by $k=64$, and the three-hidden code peaks around $k=64$ before declining. This
-is why the "which is best" question has no single answer, and it is the reason the report compares
-at matched $k$ in Fig.~\ref{fig:summary:gain} instead of comparing maxima. All three lines sit
-below the dashed Assignment-3 baseline at every width, so no configuration here beats the
+figure. No representation dominates at every width, but the crossing is not the intuitive one: PCA
+is \emph{behind} both autoencoders at $k=32$ and stays behind everywhere, so there is no rank
+reversal at all. What crosses is the two autoencoders --- the one-hidden code leads at $k=32$,
+the three-hidden code overtakes it at $k=64$ and then falls away, ending behind at $k=256$. The
+three-hidden curve also peaks at $k=64$ rather than rising monotonically. This is why the report
+compares at matched $k$ in Fig.~\ref{fig:summary:gain} instead of comparing maxima. All three lines
+sit below the dashed Assignment-3 baseline at every width, so no configuration here beats the
 raw-input model.}
 \caption{Cross-task summary: validation and test accuracy against representation width for all
 methods on one axis.  This is the single figure that answers the assignment's central question,
@@ -1183,10 +1193,13 @@ baseline are archived in the appendix.}\label{fig:summary:acc}
 \maybeinc[width=0.95\linewidth]{task1/08_comparisons/task1_heatmap_test.png}
 \infer{The $y$-axis is architecture and the $x$-axis is width, so each column is a vertically
 striped pattern rather than a blob --- the architecture effect is larger than the width effect. The
-5L\_A row is visibly broken at the two largest widths, where the cells drop to $79$ and $59\%$;
-this is the collapse discussed in Section~\ref{sec:obs:degenerate} shown as a colour change. The
-remaining rows change by roughly $1\%$ across the whole grid, which says that for these
-architectures the choice of $k$ hardly matters once degeneracy is avoided.}
+5L\_A row is visibly broken at the two middle widths, where the cells drop to $79$ and $78\,\%$
+while the row's own $k=32$ and $k=256$ cells sit at $97.9$ and $96.9\,\%$; this is the collapse
+discussed in Section~\ref{sec:obs:degenerate} shown as a colour change. It is worth noticing that
+the $k=256$ cell is the lowest of the row, not the highest --- the failure is not a smooth
+degradation with width but a breakdown at specific widths. The remaining three rows span $1.7\%$
+across the whole grid, which says that for these architectures the choice of $k$ matters far less
+than the choice of architecture once degeneracy is avoided.}
 \caption{Task 1: the full $16$-cell test-accuracy grid, which is the raw evidence the width choice
 of Section~\ref{sec:selbias} is made over.  Every cell was measured; none is generated for the
 purpose of being selected.  The matching grids for Tasks 3 and 4 are
@@ -1228,13 +1241,15 @@ informative thing one can do with it.}\label{fig:summary:bars}
 
 \begin{figure}[htbp]\centering
 \maybeinc[width=0.88\linewidth]{00_summary/summary_width_vs_gain.png}
-\infer{The two curves cross, and that crossing is the finding. At $k=32$ the one-hidden code leads
-PCA by only $0.11$~pp while the three-hidden code trails it; by $k=128$ both lead and the
-one-hidden advantage is at its largest. Neither curve reaches $\pm1$~pp anywhere, so the entire
-nonlinear benefit is under a point --- the figure's $y$-axis was set deliberately so that this
-scale is legible, since on a zero-to-$100$ axis the effect would vanish. The blue curve's
-non-monotonic dip between $k=32$ and $k=64$ is why the report quotes four separate numbers rather
-than a single average.}
+\infer{The two curves cross, and that crossing is the finding --- but not where a reader first
+looks for it. At $k=32$ the one-hidden code leads PCA by only $0.11$~pp and the three-hidden code
+\emph{also} leads, by $0.18$~pp; the three-hidden curve is above the one-hidden curve at every
+width until they meet at $k=256$, where both sit at $+0.58$~pp. So the ordering of the two
+autoencoder families against each other does not reverse here; what the figure shows is that both
+lead PCA everywhere, by between $0.05$ and $0.95$~pp. Neither curve reaches $\pm1$~pp, so the
+entire nonlinear benefit is under a point --- the $y$-axis was set deliberately so that this scale
+is legible, since on a zero-to-$100$ axis the effect would vanish. The blue curve's dip between
+$k=32$ and $k=64$ is why the report quotes four separate numbers rather than an average.}
 \caption{The comparison that isolates representation quality: the accuracy advantage of each
 autoencoder family over PCA \emph{at matched width}, rather than the difference between their
 maxima.  This is the figure that answers whether the nonlinear code is better without the
@@ -1247,12 +1262,15 @@ $k$ is the one that means what it appears to mean.}\label{fig:summary:gain}
 
 \begin{figure}[htbp]\centering
 \maybeinc[width=0.88\linewidth]{00_summary/summary_per_class_by_task.png}
-\infer{Five digits by four methods, and the pattern is vertical: within each digit the four bars are
-nearly identical in height, and the digits themselves differ by only about $1$~pp. Digit $7$ is the
-hardest for every method and digit $0$ the easiest, in the same order for all four. That the
-per-digit difficulty ordering is stable across representations is the evidence for the claim that
-the representations inherit rather than create error structure --- a property of the data, not of
-the compression.}
+\infer{Five digits by four methods. The stable feature is that within each digit the four bars are
+nearly identical, and the digits differ from one another by at most $1.45$~pp across the whole
+figure. Digit $0$ is the easiest for every method, at $98.4$ to $99.0\,\%$. Which digit is
+\emph{hardest}, however, is not stable, and that is worth stating precisely rather than rounding
+away: Task~1 finds $7$ hardest, whereas Tasks~3 and~4 both find $6$ hardest, and in Task~4 digit
+$7$ ties with digit $0$ as the easiest. What \emph{is} stable across all three representations is
+the pair $5,6$ at the bottom and $0$ at the top --- so the representations share a common error
+structure in which $5$ and $6$ are intrinsically hard, while the ranking among the remaining three
+digits is decided by the compression rather than by the data.}
 \caption{Per-class test accuracy of every task's selected configuration.  The floor is
 $96.9\,\%$ at the worst (digit, task) pair, so no digit is being dropped by any representation,
 and the ordering of difficulty is identical across all four tasks.  What the figure adds beyond
