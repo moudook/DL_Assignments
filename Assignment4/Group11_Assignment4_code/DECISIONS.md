@@ -483,6 +483,56 @@ nothing will ever recompute unless something is made to recompute it.
 
 ---
 
+## ADR-020 — The artifacts were re-derived from the weights, not the JSON
+
+**Status:** Verified. All five check suites pass.
+
+**Problem.** Every claim so far was checked against the pipeline's own JSON. That is a
+weak form of trust: the JSON is what the pipeline believed, and a bug in the writing
+would be invisible to a check that reads it back. The only artifact not yet used as
+evidence is the trained weights themselves.
+
+**What was done.** `scripts/verify_from_checkpoints.py` and
+`scripts/verify_ae_from_checkpoints.py` rebuild the PCA and autoencoder codes from
+`results_final/checkpoints/`, re-predict all $3\,795$ test labels from the stored
+classifier weights, and recompute the confusion matrices and reconstruction errors
+without reading a single reported number until after the fact.
+
+**Result.**
+
+| stage | result |
+|---|---|
+| Task-1, all 16 (k, arch) pairs | agree to $8\times10^{-6}$ pp |
+| Task-3, all 16 pairs | agree to $8\times10^{-6}$ pp |
+| Task-4, all 16 pairs | agree to $8\times10^{-6}$ pp |
+| Task-1 confusion matrix | reproduces cell for cell |
+| Task-3 and Task-4 confusion matrices | reproduce cell for cell |
+| Task-2, all 8 reconstruction errors | agree to within $2\times10^{-7}$ relative |
+
+The headline accuracies are therefore not a claim about a JSON file; they are a claim
+about the models, and the models agree.
+
+**Two apparent failures that were not failures, recorded because they look alarming.**
+First, the confusion matrices and the stored accuracies disagree by $3\times10^{-6}$ pp.
+That is float32 accumulation over $3\,795$ images --- a discrepancy of $0.00012$ of one
+image --- not a disagreement; the tolerance is now $10^{-4}$ pp and the reason is in the
+script. Second, a first attempt at the autoencoder check produced reconstruction MSE
+around $50$. The cause was that the hand-rolled forward pass omitted the decoder's final
+sigmoid, which `models.Autoencoder` applies so reconstructions lie in $[0,1]$. The
+scripts now instantiate the project's own `FCNN` and `Autoencoder` classes and load the
+stored `state_dict` into them, so a change to the model definition cannot silently
+desynchronise the check from the code.
+
+**Decision.** Record the five suites as `make verify-all`. The weight-based suites are
+the authoritative ones; the JSON-based suites exist to catch bookkeeping errors the
+weight-based check cannot see, such as a wrong width recorded next to a correct model.
+
+**Lesson recorded.** A check that reads back the system's own output tests only
+consistency. Testing truth requires recomputing it from something the system did not
+write.
+
+---
+
 ## ADR-018 — The redraw said it drew the panels and did not
 
 **Status:** Fixed.
