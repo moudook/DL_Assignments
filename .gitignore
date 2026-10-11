@@ -101,3 +101,8 @@ Assignment4/Group11_Assignment4_code/report/*.lof
 # Submission archives (uploaded to Moodle as a zip, never committed).
 Assignment4/Group11_Assignment4_code.zip
 Assignment4/Group11_Assignment4_report.pdf
+
+# IDE / agent scratch
+.idea/
+.kilo/
+Assignment3.rar
