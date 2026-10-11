@@ -90,7 +90,7 @@ CS24BT061 & Sidharth B \\
 \begin{tabular}{@{}ll@{}}
 \toprule\textbf{Course} & CS601T: Deep Learning \\ \midrule
 \textbf{Semester} & August--November 2026 \\
-\textbf{Institute} & Indian Institute of Technology Delhi \\
+\textbf{Institute} & Indian Institute of Technology Dharwad \\
 \bottomrule
 \end{tabular}
 \vfill
@@ -112,7 +112,7 @@ error with Adam.  The frozen bottleneck codes of both families feed the same fou
 giving Tasks 3 and 4; family-specific denoising variants trained against clean targets under
 $20\,\%$ and $40\,\%$ masked-pixel corruption give Task 5; and the maximally activating training
 image plus the incoming encoder weight of each bottleneck unit give Task 6.  The principal
-empirical finding is that a learned nonlinear code beats the linear PCA code of the same width at
+empirical finding is that a learned nonlinear code matches or slightly exceeds the linear PCA code of the same width at
 every width measured: the one-hidden code leads PCA by $+0.11$~pp at $k=32$, $+0.05$~pp at $k=64$,
 $+0.50$~pp at $k=128$ and $+0.95$~pp at $k=256$.  The strongest single configuration is the
 three-hidden encoder at $k=64$ ($98.50\,\%$); and that the learned code keeps the same per-class
@@ -154,7 +154,7 @@ Total & 18\,975 & 3\,795 & 3\,795 & 3\,795 & 3\,795 & 3\,795 & 100\,\% \\
 \end{table}
 
 \subsection{What the data look like}\label{sec:dataset:eda}
-Before any model is fitted, five figures record what the raw input is.  They are reproduced
+Before any model is fitted, four figures record what the raw input is.  They are reproduced
 here because every later result is conditional on them, and because the two most easily
 missed facts --- that the classes are far from balanced in difficulty, and that a class mean
 carries almost none of the within-class variation --- are both visible only at this stage.
@@ -557,7 +557,7 @@ one marking a fifty-epoch window in which no improvement over the running best o
 \caption{Autoencoder convergence (Task 2, one-hidden, $k=256$).  Reconstruction MSE on a log
 scale against epoch, with the inherited $10^{-4}$ tolerance line drawn.  The curve crosses the
 line early and keeps descending for six thousand epochs, reaching its plateau at $6\,555$ by the
-relative rule.  This single figure is the evidence for ADR-001: the inherited absolute rule
+relative rule.  The inherited absolute rule
 stops the run near epoch $200$ at roughly $6\times10^{-3}$, where the curve is still falling fast,
 and the relative rule instead lets it reach $6\times10^{-4}$.}\label{fig:conv:ae}
 \end{figure}
@@ -588,23 +588,8 @@ the windowed best-loss history, not merely the patience streak.  Restoring less 
 correctness bug: a resumed autoencoder would fall back to the constructor's default mode and
 re-evaluate the plateau test from an empty history, and could then stop far earlier than the rule
 intends.  Progress lines and status snapshots use a rolling 50-epoch rate window
-rather than a whole-run mean, because sustained load on a $4\,$GB laptop GPU thermally throttles
-and a mean-rate ETA only ever becomes more optimistic as the run proceeds.
-
-\begin{lstlisting}[caption={Autoencoder construction (models.py).  The bottleneck is linear in both
-families; the three-hidden family brackets it with 400-wide sigmoid layers as the assignment
-prescribes.  The same single \code{nn.Linear(784,$k$)} encoder is reused, with a masking
-corruption of Eq.~\eqref{eq:noise} applied to its input, as the denoising autoencoder of Task 5.},
-label={lst:ae}]
-if kind == "1hidden":                       # 784 -> k -> 784
-    encoder = nn.Sequential(nn.Linear(input_dim, bottleneck))
-    decoder = nn.Sequential(nn.Linear(bottleneck, input_dim), nn.Sigmoid())
-elif kind == "3hidden":                     # 784 -> 400 -> k -> 400 -> 784
-    encoder = nn.Sequential(nn.Linear(input_dim, 400), nn.Sigmoid(),
-                            nn.Linear(400, bottleneck))   # linear bottleneck
-    decoder = nn.Sequential(nn.Linear(bottleneck, 400), nn.Sigmoid(),
-                            nn.Linear(400, input_dim), nn.Sigmoid())
-\end{lstlisting}
+rather than a whole-run mean, because sustained load thermally throttles the
+GPU and a mean-rate ETA only ever becomes more optimistic as the run proceeds.
 
 \section{Task 1: Dimensionality Reduction with PCA}\label{sec:task1}
 For each of $k=32,64,128,256$ the training split is projected onto the top-$k$ eigenvectors of
@@ -768,8 +753,10 @@ Three-hidden  & 256  & 0.001330 & 0.002317 & 0.002346 & 0.001016 \\
 one tenth of the $k=32$ bar --- while the three-hidden family starts \emph{better} at small $k$
 ($0.00654$ against $0.00935$) and crosses over, ending worse at $k=256$ ($0.00235$ against
 $0.00093$). Depth helps the narrow bottleneck and hurts the wide one, so the claim worth checking
-is that the two cross over, not that one dominates; width dominates the absolute error. The train,
-val and test groups are near-identical, so the autoencoders are not overfitting either.}
+is that the two cross over, not that one dominates; width dominates the absolute error. The three
+splits do not coincide: for the three-hidden family the test error is roughly twice the train
+error ($0.0032$ against $0.0065$ at $k=32$, $0.0019$ against $0.0039$ at $k=64$), so the
+autoencoders are fitting the training split measurably harder than they generalise.}
 \caption{Task 2: post-training reconstruction error $E_{\mathrm{rec}}$ against bottleneck width $k$
 for both families and all three splits.  The $y$-axis is shared, so the separation between families
 is directly comparable.}\label{fig:task2:err}
@@ -779,8 +766,9 @@ is directly comparable.}\label{fig:task2:err}
 The first check in Figure~\ref{fig:task2:err} is whether the three curves of a family move together
 or fan out.  If train, val and test coincide at small $k$ and separate at large $k$, the autoencoder
 is interpolating the training set rather than learning a code, and the point of separation is the
-width at which the code stops generalising; if they stay together throughout, the bottleneck is
-acting as a sufficient statistic even at $k=256$ and the family is not overfitting.  The second
+width at which the code stops generalising; if the gap stays a roughly constant factor of two
+across $k$, the bottleneck is acting as a sufficient statistic at every width measured, with a
+steady train-test offset rather than a widening one.  The second
 check is the family separation: because the three-hidden family has a fixed $\approx628\,784$
 parameters regardless of $k$ (Table~\ref{tab:aeparams}), it can afford an extremely nonlinear map
 for a narrow code, and the question is whether that nonlinearity buys a lower $E_{\mathrm{rec}}$ at
@@ -869,9 +857,10 @@ point, since the code is only $32$-dimensional and the classifier's capacity is 
 The best one-hidden configuration is $k=32$ with the 3L\_A classifier, at
 $\Acc_{\mathrm{val}}=98.29\,\%$ and $\Acc_{\mathrm{test}}=98.34\,\%$ ($3732/3795$).  Its test
 confusion matrix is Figure~\ref{fig:task3:cm}.  Both claims hold.  The $5\leftrightarrow6$
-confusion remains the dominant off-diagonal mass, and the per-class recall ordering is unchanged
-from PCA and from the raw input, so the learned code inherited the error structure of the problem
-rather than reshaping it.  It should be recorded, however, that $k=32$ --- not $k=256$ --- is the
+confusion remains the dominant off-diagonal mass, and the ranking of classes by recall is close to
+PCA's, so the learned code inherited the error structure of the problem rather than reshaping it.
+The ranking is not identical: PCA's hardest class is $7$ ($98.02\,\%$) while the one-hidden code's
+is $6$ ($97.50\,\%$), so $6$ and $7$ swap the two bottom places.  It should be recorded, however, that $k=32$ --- not $k=256$ --- is the
 best one-hidden width: at $k=256$ the one-hidden code reaches $98.18\,\%$, which is below PCA's
 best width ($98.23\,\%$) rather than above it.
 
@@ -924,7 +913,8 @@ happened: the three-hidden code wins at three of the four widths, by $+0.08$ pp 
 $+0.42$ pp at $k=64$ and $+0.08$ pp at $k=128$, and loses only at $k=256$, by $-0.37$ pp.  The
 wider widths are where it degrades, not the narrower ones, so the extra depth helps until the
 encoder is asked to pass a wide code through too much nonlinearity.  Its best result,
-$98.50\,\%$ at $k=64$, is the highest of any configuration in this study.
+$98.50\,\%$ at $k=64$, ties for the highest test accuracy in this study with the denoising model at
+$\rho=0.20$, also $3738/3795$.
 
 The collapse visible in the bottom row of Table~\ref{tab:task4} is a separate phenomenon and must
 not be attributed to the encoder.  It is the single degenerate run of that task --- 5L\_A at
@@ -978,7 +968,7 @@ accuracy of both codes, alongside the reconstruction errors.
 \caption{Task 5: classification accuracy from the frozen denoising bottleneck
 representation against the plain one-hidden result at the same $k$ (from
 Table~\ref{tab:task3}), together with the post-training reconstruction error of
-each model on the test split and the Assignment-3 baseline.}
+each model on the test split and the raw-input baseline.}
 \label{tab:task5clf}
 \begin{tabular}{@{}lrrrr@{}}
 \toprule Model & Val acc. (\%) & Test acc. (\%) & Test $E_{\mathrm{rec}}$ & $\Delta$ vs. plain \\
@@ -1014,7 +1004,7 @@ same digits with a scattering of black holes where pixels were zeroed; the recon
 them are nearly indistinguishable from the clean top row, not from the corrupted middle row. The
 model has learned to fill the holes rather than to reproduce them, which is what Eq.~\eqref{eq:dae}
 asks of it. Comparing row three against row one gives the $59\%$ of baseline figure of
-Fig.~\ref{fig:obs:denoise}; comparing it against row two would give a much flattering but
+Fig.~\ref{fig:obs:denoise}; comparing it against row two would give a much more flattering but
 meaningless number.}
 \caption{Task 5, $\rho=0.20$: clean original, corrupted input and reconstruction for one image per
 class from the test split.  The middle row is the model's actual input; the third row is its
@@ -1158,7 +1148,7 @@ Units whose response collapses under corruption have effectively left the code.}
 
 \section{Results Summary and Comparison}\label{sec:results}
 Table~\ref{tab:summary} collects the selected configuration of every task together with the
-Assignment-3 baseline.  The comparison is the point of the assignment, and it is stated with
+raw-input baseline.  The comparison is the point of the assignment, and it is stated with
 its protocol differences made explicit: the baseline was trained at batch size $1$ while
 every model here is full-batch, and its reference figure is a validation-selected result
 while the widths here are selected on test (Section~\ref{sec:selbias}).  Both differences cut
@@ -1187,10 +1177,10 @@ Base & Raw pixels, A\_128\_64\_32 & 784 & 98.84 & 98.76 & --- \\
 \maybeinc[width=0.78\linewidth]{00_summary/summary_accuracy_vs_dimension.png}
 \infer{The three lines cross, which is the most important feature here. No representation dominates
 at every width, but the crossing is not the intuitive one: PCA is \emph{behind} both autoencoders
-at $k=32$ and stays behind everywhere, so there is no rank reversal at all. What crosses is the
-two autoencoders --- the one-hidden code leads at $k=32$, the three-hidden overtakes at $k=64$ and
-then falls away. That is why the report compares at matched $k$ in Fig.~\ref{fig:summary:gain}
-instead of comparing maxima. All three lines sit below the dashed Assignment-3 baseline at every
+at every width, so there is no rank reversal involving PCA. What crosses is the
+two autoencoders --- the three-hidden code already leads at $k=32$ ($98.42$ against $98.34$), pulls
+further ahead at $k=64$ and $128$, then falls behind at $k=256$ ($97.81$ against $98.18$). That is why the report compares at matched $k$ in Fig.~\ref{fig:summary:gain}
+instead of comparing maxima. All three lines sit below the dashed raw-input baseline at every
 width, so no configuration here beats the raw-input model.}
 \caption{Cross-task summary: validation and test accuracy against representation width for all
 methods on one axis.  This is the single figure that answers the assignment's central question,
@@ -1234,33 +1224,32 @@ use and what a report quotes.}\label{fig:task1:heat:val}
 \begin{figure}[htbp]\centering
 \maybeinc[width=0.78\linewidth]{00_summary/summary_accuracy_bars.png}
 \infer{Unlike the line plot above, this figure flattens everything: because the $y$-axis runs from
-zero to $100$, twelve bars spanning a $0.26$~pp range are all the same height to the eye. It is the
+zero to $100$, twelve bars spanning about $1.27$~pp are all the same height to the eye. It is the
 one figure in this report whose design hides its own result --- the ranking is visible only if the
-reader recalls the numbers from Table~\ref{tab:summary}. The honest reading is that every method
-lands within a quarter of a percentage point of the Assignment-3 baseline, and the bar chart is the
-clearest statement of that fact even though it cannot rank them.}
-\caption{Every task's selected accuracy as a bar, against the Assignment-3 baseline.  The spread
-between the best and worst representation is $0.26$~pp, which is the same order as the selection
-bias of Section~\ref{sec:selbias} and an order of magnitude below the $0.4$~pp by which the best
-nonlinear code beats the linear one.  Ranking the tasks from a figure like this is the least
-informative thing one can do with it.}\label{fig:summary:bars}
+reader recalls the numbers from Table~\ref{tab:summary}. The best representation lands $0.26$~pp
+above the worst, so the methods are close but not identical, and the bar chart cannot separate
+them.}
+\caption{Every task's selected accuracy as a bar, against the raw-input baseline.  The spread
+between the best and the worst representation is $0.26$~pp; the full range shown, from PCA at
+$k=256$ to the best three-hidden code, is about $1.27$~pp.  Ranking the tasks from a figure like
+this is the least informative thing one can do with it.}\label{fig:summary:bars}
 \end{figure}
 
 \begin{figure}[htbp]\centering
 \maybeinc[width=0.78\linewidth]{00_summary/summary_width_vs_gain.png}
 \infer{The two curves cross, but not where the eye looks first: at $k=32$ the one-hidden code
-leads PCA by $0.11$~pp and the three-hidden code also leads, by $0.18$~pp, and the three-hidden
-curve stays above the one-hidden at every width until they meet at $k=256$ at $+0.58$~pp. So the
-two autoencoder families never reverse against each other; what the figure shows is that both lead
-PCA everywhere, by $0.05$ to $0.95$~pp. Neither curve reaches $\pm1$~pp, so the entire nonlinear
-benefit is under a point --- the $y$-axis is set so this scale is legible, since on a
-zero-to-$100$ axis the effect would vanish.}
+leads PCA by $0.11$~pp and the three-hidden code also leads, by $0.18$~pp. The three-hidden curve
+stays above the one-hidden up to $k=128$ and then falls below it at $k=256$, where the one-hidden
+leads by $0.37$~pp. So the two autoencoder families do reverse against each other at the widest
+code; what the figure shows is that both lead PCA at every width, by $0.05$ to $0.95$~pp. Neither
+curve reaches $\pm1$~pp, so the entire nonlinear benefit is under a point --- the $y$-axis is set
+so this scale is legible, since on a zero-to-$100$ axis the effect would vanish.}
 \caption{The comparison that isolates representation quality: the accuracy advantage of each
 autoencoder family over PCA \emph{at matched width}, rather than the difference between their
 maxima.  This is the figure that answers whether the nonlinear code is better without the
 confound of Section~\ref{sec:obs:falsing}.  The one-hidden code leads at every width, but by
 uneven margins: $+0.11$~pp at $k=32$, $+0.05$ at $k=64$, $+0.50$ at $k=128$ and $+0.95$ at
-$k=256$.  Since both curves fall with $k$ and PCA falls faster (ADR-008), most of the widening
+$k=256$.  Since both curves fall with $k$ and PCA falls faster , most of the widening
 gap is PCA degrading rather than the code improving --- so the matched-width comparison at small
 $k$ is the one that means what it appears to mean.}\label{fig:summary:gain}
 \end{figure}
@@ -1446,8 +1435,7 @@ $12\times$ compression from the $784$-dimensional raw input.  The best linear re
 $k=32$, $98.2345\,\%$, and the best one-hidden result is $98.3399\,\%$ at the same width.  The
 ordering of the three families reverses the initial expectation in one respect --- deeper encoding
 helped --- but the margin between families is narrow: the three headline numbers span
-$98.2345$ to $98.4980\,\%$, a range of $0.26$~pp, and all three sit below the Assignment-3
-raw-input baseline of $98.76\,\%$.  A single test sample is $0.026$~pp here, so gaps of one or two
+$98.2345$ to $98.4980\,\%$, a range of $0.26$~pp, and all three sit below the raw-input baseline of $98.76\,\%$.  A single test sample is $0.026$~pp here, so gaps of one or two
 samples are not findings.  It follows that the defensible summary is a ranking of the three
 families, not a claim that any of them approaches the uncompressed baseline: the two
 representations that cost the least accuracy are the three-hidden code and the denoising code,
@@ -1456,16 +1444,17 @@ the width comparison is the mean across widths rather than the best width
 (Section~\ref{sec:selbias}).
 
 The reconstruction and denoising results are cleaner than the classification results.  The
-one-hidden code reconstructs the bottleneck to $0.000926$ at $k=256$ and to $0.009346$ at $k=32$,
+one-hidden code reconstructs images to $0.000926$ at $k=256$ and to $0.009346$ at $k=32$,
 with the three-hidden family better only at $k=32$ ($0.006537$ against $0.009346$) and worse at
 $k=64$, $128$ and $256$ ($0.003859$ against $0.003748$, $0.002772$ against $0.001707$, and $0.002346$
 against $0.000926$), so depth buys reconstruction capacity only while the bottleneck is narrow,
 and the margin reverses almost immediately.  The denoising models do
 denoise: on an input with a fifth of its pixels zeroed they reach an error of $0.013577$ against a
 copy-the-input baseline of $0.022842$, $59\,\%$ of the error of copying, rising to $39\,\%$ at
-$40\,\%$ corruption ($0.017821$ against $0.045832$).  Reconstruction quality and classification
-accuracy move in opposite directions along the corruption axis, which is the trade-off Task~5
-exists to exhibit.
+$40\,\%$ corruption ($0.017821$ against $0.045832$).  Classification accuracy is flat across
+that axis --- within $0.16$~pp, or about six test samples --- so Task~5 shows no accuracy-for-
+reconstruction trade-off: stronger corruption buys cleaner separation of signal from noise without
+costing any accuracy measured here.
 
 Three process conclusions are as important as the accuracy numbers.  The inherited single-epoch
 stopping rule is unsound and was replaced: by a patience window for classifiers and by a relative
