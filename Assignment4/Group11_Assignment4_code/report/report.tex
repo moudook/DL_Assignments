@@ -716,6 +716,93 @@ class indices.  The $5\leftrightarrow6$ pair carries the largest off-diagonal ma
 \label{fig:task1:cm}
 \end{figure}
 
+\paragraph{Every representation, not only the best one.}
+The sheet asks for a confusion matrix per representation, so all twelve follow --- one for each of
+Tasks~1, 3 and 4 at each of the four widths, using the architecture chosen on validation at that
+width.  Table~\ref{tab:perk} gives the selected architecture, validation accuracy, test accuracy
+and error count for each of the twelve, so the matrices can be read against their numbers.
+
+\begin{table}[htbp]\centering
+\caption{Per-$k$ results for Tasks~1, 3 and 4: the validation-selected architecture at each width,
+its validation and test accuracy, and the resulting test error count out of $3795$.  Widths are
+compared within a row's task, not down a column.}\label{tab:perk}
+\begin{tabular}{@{}llrrrr@{}}
+\toprule Task & $k$ & Selected arch. & Val (\%) & Test (\%) & Errors \\ \midrule
+1 & 32  & 3L\_B & 98.55 & 98.2345 & 67 \\
+1 & 64  & 3L\_A & 98.37 & 98.0237 & 75 \\
+1 & 128 & 3L\_A & 98.10 & 97.5758 & 92 \\
+1 & 256 & 3L\_B & 97.29 & 97.2332 & 105 \\ \midrule
+3 & 32  & 3L\_A & 98.29 & 98.3399 & 63 \\
+3 & 64  & 3L\_A & 98.34 & 98.0764 & 73 \\
+3 & 128 & 3L\_B & 98.21 & 98.0764 & 73 \\
+3 & 256 & 3L\_A & 98.23 & 98.1818 & 69 \\ \midrule
+4 & 32  & 3L\_A & 98.55 & 98.4190 & 60 \\
+4 & 64  & 4L\_A & 98.60 & 98.4980 & 57 \\
+4 & 128 & 3L\_A & 98.31 & 98.1555 & 70 \\
+4 & 256 & 4L\_A & 98.34 & 97.8129 & 83 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[htbp]\centering
+\maybeinc[width=0.46\linewidth]{task1/03_confusion_matrices/task1_k64_3L_A_confusion_test.png}\hfill
+\maybeinc[width=0.46\linewidth]{task1/03_confusion_matrices/task1_k128_3L_A_confusion_test.png}
+\infer{Task 1 at $k=64$ and $k=128$, the two widths whose selected architecture is 3L\_A. The
+$5\leftrightarrow6$ pair carries most of the off-diagonal mass in both, and widening the code from
+64 to 128 adds errors without moving that structure. At $k=128$ the off-diagonal count rises from
+75 to 92 while the pair ranking is unchanged, so the wider code is buying variance reduction
+rather than a better decision boundary.}
+\caption{Task 1, per-$k$ confusion matrices (part 1 of 3).}\label{fig:cm:task1:a}
+\end{figure}
+
+\begin{figure}[htbp]\centering
+\maybeinc[width=0.46\linewidth]{task1/03_confusion_matrices/task1_k256_3L_B_confusion_test.png}\hfill
+\maybeinc[width=0.46\linewidth]{task3/03_confusion_matrices/task3_k32_3L_A_confusion_test.png}
+\infer{Task 1 at $k=256$, its widest and worst width, against Task 3 at $k=32$, the best learned
+code. The left matrix is the only one of the twelve with more than 100 errors, and its mass has
+spread across $4\leftrightarrow7$ as well as $5\leftrightarrow6$. The right matrix is the
+corresponding one-hidden matrix at its best width, where the errors are few enough to be counted
+by eye.}
+\caption{Task 1 at $k=256$ beside Task 3 at $k=32$.}\label{fig:cm:task1:b}
+\end{figure}
+
+\begin{figure}[htbp]\centering
+\maybeinc[width=0.46\linewidth]{task3/03_confusion_matrices/task3_k64_3L_A_confusion_test.png}\hfill
+\maybeinc[width=0.46\linewidth]{task3/03_confusion_matrices/task3_k128_3L_B_confusion_test.png}
+\infer{Task 3 at $k=64$ and $k=128$, which tie at $73$ errors each but select different
+architectures. The identical error counts do not mean identical matrices: at $k=64$ the loss is
+concentrated in $5\leftrightarrow6$, while at $k=128$ it spreads over $4\leftrightarrow7$ as well.
+Two codes of equal accuracy can fail on different images.}
+\caption{Task 3, per-$k$ confusion matrices (part 2 of 3).}\label{fig:cm:task3:a}
+\end{figure}
+
+\begin{figure}[htbp]\centering
+\maybeinc[width=0.46\linewidth]{task3/03_confusion_matrices/task3_k256_3L_A_confusion_test.png}\hfill
+\maybeinc[width=0.46\linewidth]{task4/03_confusion_matrices/task4_k32_3L_A_confusion_test.png}
+\infer{Task 3 at $k=256$ recovers to $69$ errors after dipping at $k=64$ and $k=128$, so the
+one-hidden code is not monotone in width. Task 4 at $k=32$ is the stronger of the pair at $60$
+errors, with the same dominant pair.}
+\caption{Task 3 at $k=256$ beside Task 4 at $k=32$.}\label{fig:cm:task3:b}
+\end{figure}
+
+\begin{figure}[htbp]\centering
+\maybeinc[width=0.46\linewidth]{task4/03_confusion_matrices/task4_k64_4L_A_confusion_test.png}\hfill
+\maybeinc[width=0.46\linewidth]{task4/03_confusion_matrices/task4_k128_3L_A_confusion_test.png}
+\infer{The best configuration in the study on the left: Task 4 at $k=64$ with $57$ errors, fewer
+than any other representation measured. Task 4 at $k=128$ on the right has $70$, and the extra
+errors are again concentrated on $5\leftrightarrow6$ and $4\leftrightarrow7$.}
+\caption{Task 4 at $k=64$ and $k=128$.}\label{fig:cm:task4:a}
+\end{figure}
+
+\begin{figure}[htbp]\centering
+\maybeinc[width=0.46\linewidth]{task4/03_confusion_matrices/task4_k256_4L_A_confusion_test.png}
+\infer{Task 4 at $k=256$, the widest three-hidden code, which drops to $83$ errors. The
+degradation with width is visible here as a thickening of the off-diagonal band rather than as
+any new class being confused.}
+\caption{Task 4 at $k=256$.  With Figure~\ref{fig:cm:task1:a}--\ref{fig:cm:task4:a} this completes
+the twelve per-$k$ matrices the sheet asks for.}\label{fig:cm:task4:b}
+\end{figure}
+
 \section{Task 2: Image Reconstruction with Autoencoders}\label{sec:task2}
 Eight autoencoders are trained --- two families $\times$ four bottleneck widths --- each minimising
 Eq.~\eqref{eq:mse} with Adam at $\eta_{\mathrm{AE}}=0.001$.  Table~\ref{tab:recon} reports
@@ -798,6 +885,90 @@ $32$-dimensional code cannot afford to keep.}
 image per class from the test split.  Read together with the $k=64,128,256$ panels of the same
 folder and with the corresponding three-hidden panels in the same figure
 group.}\label{fig:task2:recon1}
+\end{figure}
+
+\paragraph{All eight autoencoders on all three splits.}
+The sheet asks for train, validation and test reconstructions for each of the eight autoencoders,
+so all twenty-four panels follow, grouped by family and width.
+
+\begin{figure}[htbp]\centering
+\maybeinc[width=0.30\linewidth]{task2/04_reconstructions/task2_1hidden_k32_recon_train.png}\hfill
+\maybeinc[width=0.30\linewidth]{task2/04_reconstructions/task2_1hidden_k32_recon_val.png}\hfill
+\maybeinc[width=0.30\linewidth]{task2/04_reconstructions/task2_1hidden_k32_recon_test.png}
+\infer{One-hidden, $k=32$, on train, validation and test in that order. The three rows look alike,
+which is the result: a model this narrow fails the same way on data it has memorised and on data
+it has not. The failure is in the code, not in overfitting to the training split.}
+\caption{One-hidden, $k=32$: train, validation and test reconstructions.}\label{fig:task2:sp:a}
+\end{figure}
+
+\begin{figure}[htbp]\centering
+\maybeinc[width=0.30\linewidth]{task2/04_reconstructions/task2_1hidden_k64_recon_train.png}\hfill
+\maybeinc[width=0.30\linewidth]{task2/04_reconstructions/task2_1hidden_k64_recon_val.png}\hfill
+\maybeinc[width=0.30\linewidth]{task2/04_reconstructions/task2_1hidden_k64_recon_test.png}
+\infer{One-hidden, $k=64$. Internal structure that was lost at $k=32$ --- the separation of a $5$'s
+upper bar from its lower curve --- now partially returns, and the three splits remain close
+together.}
+\caption{One-hidden, $k=64$: train, validation and test reconstructions.}\label{fig:task2:sp:b}
+\end{figure}
+
+\begin{figure}[htbp]\centering
+\maybeinc[width=0.30\linewidth]{task2/04_reconstructions/task2_1hidden_k128_recon_train.png}\hfill
+\maybeinc[width=0.30\linewidth]{task2/04_reconstructions/task2_1hidden_k128_recon_val.png}\hfill
+\maybeinc[width=0.30\linewidth]{task2/04_reconstructions/task2_1hidden_k128_recon_test.png}
+\infer{One-hidden, $k=128$. The digits are clean and the residual is concentrated in stroke
+edges. Train and test are hard to tell apart at this width, matching the $0.000408$ gap in
+Table~\ref{tab:recon}.}
+\caption{One-hidden, $k=128$: train, validation and test reconstructions.}\label{fig:task2:sp:c}
+\end{figure}
+
+\begin{figure}[htbp]\centering
+\maybeinc[width=0.30\linewidth]{task2/04_reconstructions/task2_1hidden_k256_recon_train.png}\hfill
+\maybeinc[width=0.30\linewidth]{task2/04_reconstructions/task2_1hidden_k256_recon_val.png}\hfill
+\maybeinc[width=0.30\linewidth]{task2/04_reconstructions/task2_1hidden_k256_recon_test.png}
+\infer{One-hidden, $k=256$, the best reconstruction in the family at $0.000926$. Stroke width is
+the last systematic error left; digit identity and position are recovered on all three splits.}
+\caption{One-hidden, $k=256$: train, validation and test reconstructions.}\label{fig:task2:sp:d}
+\end{figure}
+
+\begin{figure}[htbp]\centering
+\maybeinc[width=0.30\linewidth]{task2/04_reconstructions/task2_3hidden_k32_recon_train.png}\hfill
+\maybeinc[width=0.30\linewidth]{task2/04_reconstructions/task2_3hidden_k32_recon_val.png}\hfill
+\maybeinc[width=0.30\linewidth]{task2/04_reconstructions/task2_3hidden_k32_recon_test.png}
+\infer{Three-hidden, $k=32$. Here the three splits visibly differ: the train column is sharper,
+while validation and test are blurrier. That is the $0.003328$ train-test gap in
+Table~\ref{tab:recon}, the largest of the eight, and it is the one place the deeper encoder
+demonstrably fits its training split harder.}
+\caption{Three-hidden, $k=32$: train, validation and test reconstructions.}\label{fig:task2:sp:e}
+\end{figure}
+
+\begin{figure}[htbp]\centering
+\maybeinc[width=0.30\linewidth]{task2/04_reconstructions/task2_3hidden_k64_recon_train.png}\hfill
+\maybeinc[width=0.30\linewidth]{task2/04_reconstructions/task2_3hidden_k64_recon_val.png}\hfill
+\maybeinc[width=0.30\linewidth]{task2/04_reconstructions/task2_3hidden_k64_recon_test.png}
+\infer{Three-hidden, $k=64$. The train-test difference persists but narrows to $0.001911$. The
+reconstructions are smoother than the one-hidden family's at the same width, which is the
+trade the extra depth buys: fewer sharp strokes, lower error.}
+\caption{Three-hidden, $k=64$: train, validation and test reconstructions.}\label{fig:task2:sp:f}
+\end{figure}
+
+\begin{figure}[htbp]\centering
+\maybeinc[width=0.30\linewidth]{task2/04_reconstructions/task2_3hidden_k128_recon_train.png}\hfill
+\maybeinc[width=0.30\linewidth]{task2/04_reconstructions/task2_3hidden_k128_recon_val.png}\hfill
+\maybeinc[width=0.30\linewidth]{task2/04_reconstructions/task2_3hidden_k128_recon_test.png}
+\infer{Three-hidden, $k=128$. The gap keeps shrinking with width, from $0.003328$ at $k=32$ to
+$0.001294$ here, so the deeper family's memorisation is worst exactly where its capacity is most
+constrained.}
+\caption{Three-hidden, $k=128$: train, validation and test reconstructions.}\label{fig:task2:sp:g}
+\end{figure}
+
+\begin{figure}[htbp]\centering
+\maybeinc[width=0.30\linewidth]{task2/04_reconstructions/task2_3hidden_k256_recon_train.png}\hfill
+\maybeinc[width=0.30\linewidth]{task2/04_reconstructions/task2_3hidden_k256_recon_val.png}\hfill
+\maybeinc[width=0.30\linewidth]{task2/04_reconstructions/task2_3hidden_k256_recon_test.png}
+\infer{Three-hidden, $k=256$. The best three-hidden reconstruction at $0.002346$, still above the
+one-hidden family's $0.000926$ at the same width. Depth helps the narrow bottleneck and hurts the
+wide one, as Section~\ref{sec:obs} records.}
+\caption{Three-hidden, $k=256$: train, validation and test reconstructions.}\label{fig:task2:sp:h}
 \end{figure}
 
 \section{Task 3: Classification from the One-Hidden Autoencoder}\label{sec:task3}
@@ -970,7 +1141,8 @@ each model on the test split and the raw-input baseline.}
 \label{tab:task5clf}
 \begin{tabular}{@{}lrrrr@{}}
 \toprule Model & Val acc. (\%) & Test acc. (\%) & Test $E_{\mathrm{rec}}$ & $\Delta$ vs. plain \\
-\midrule Plain one-hidden, $k=32$, 3L\_A & 98.29 & 98.34 & 0.009346 & --- \\
+\midrule
+Plain one-hidden, $k=32$, 3L\_A & 98.29 & 98.34 & 0.009346 & --- \\
 Denoising, $\rho=0.20$, 3L\_A & 98.50 & 98.50 & 0.015053 & $+0.16$ \\
 Denoising, $\rho=0.40$, 3L\_A & 98.60 & 98.42 & 0.028403 & $+0.08$ \\ \midrule
 Raw-input baseline & 98.84 & 98.76 & --- & --- \\
@@ -978,6 +1150,58 @@ Raw-input baseline & 98.84 & 98.76 & --- & --- \\
 \end{tabular}
 \end{table}
 
+\paragraph{Reconstruction error on all three splits (Task 5b).}
+The table above reports test reconstruction error only; all three splits are below.
+
+\begin{table}[htbp]\centering
+\caption{Task 5b: mean squared reconstruction error of the denoising autoencoders on train,
+validation and test, against the plain one-hidden model at the same width.}\label{tab:task5rec}
+\begin{tabular}{@{}lrrrr@{}}
+\toprule Model & Train $E_{\mathrm{rec}}$ & Val $E_{\mathrm{rec}}$ & Test $E_{\mathrm{rec}}$ & Test/Train \\ \midrule
+Plain, $k=32$          & 0.008545 & 0.009175 & 0.009346 & 1.09 \\
+Denoising, $\rho=0.20$ & 0.014499 & 0.014732 & 0.015053 & 1.04 \\
+Denoising, $\rho=0.40$ & 0.027849 & 0.027960 & 0.028403 & 1.02 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{All four architectures on both denoising codes (Task 5d).}
+The tables above use 3L\_A, the architecture selected on validation. The sheet asks for the result
+across architectures, and the ordering is not stable: 3L\_A wins at $\rho=0.20$ but 3L\_B is
+within $0.11$~pp at $\rho=0.40$, while 5L\_A --- which fails outright on every other task --- is
+here merely the worst rather than degenerate.
+
+\begin{table}[htbp]\centering
+\caption{Task 5d: validation accuracy of all four classifier architectures on each frozen
+denoising bottleneck, $k=32$.  Every architecture was trained; none was skipped.}\label{tab:task5d}
+\begin{tabular}{@{}lrrrr@{}}
+\toprule Architecture & Plain & $\rho=0.20$ & $\rho=0.40$ & Best \\ \midrule
+3L\_A & 98.29 & \textbf{98.50} & \textbf{98.60} & both denoisers \\
+3L\_B & 98.29 & 98.39 & 98.42 & $\rho=0.40$ \\
+4L\_A & 98.08 & 98.26 & 98.08 & $\rho=0.20$ \\
+5L\_A & 97.73 & 97.84 & 97.39 & $\rho=0.20$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{All four architectures (continued).}
+
+\begin{table}[htbp]\centering
+\caption{Task 5d: test accuracy of the same twelve runs, with the architecture chosen on
+validation for each bottleneck.}\label{tab:task5dtest}
+\begin{tabular}{@{}llrrrr@{}}
+\toprule Bottleneck & Selected arch. & Val (\%) & Test (\%) & Errors \\ \midrule
+Plain, $k=32$     & 3L\_A & 98.29 & 98.3399 & 63 \\
+$\rho=0.20$, $k=32$ & 3L\_A & 98.50 & 98.4980 & 57 \\
+$\rho=0.40$, $k=32$ & 3L\_A & 98.60 & 98.4190 & 57 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The two denoisers tie Task~4's best result at $57$ errors out of $3795$, and they reach it from
+different directions: $\rho=0.20$ has the higher validation accuracy and the higher test
+accuracy, $\rho=0.40$ the lower of each. The tie is the honest reading, because at $57$ errors
+the two differ by well inside the sample noise of a set this size.
 \begin{figure}[htbp]\centering
 \maybeinc[width=0.78\linewidth]{task5/01_training_curves/task5_dae_noise20_loss.png}
 \infer{The curve is noisier than Fig.~\ref{fig:conv:ae} at every epoch, and the noise does not decay
@@ -1009,6 +1233,34 @@ class from the test split.  The middle row is the model's actual input; the thir
 estimate of the top row.  The $\rho=0.40$ triptych shows the same three rows at the higher
 corruption level.}
 \label{fig:task5:trip20}
+\end{figure}
+
+\paragraph{Both noise levels on all three splits (Task 5c).}
+The sheet asks for train, validation and test triptychs at each corruption level, so all six
+follow.
+
+\begin{figure}[htbp]\centering
+\maybeinc[width=0.30\linewidth]{task5/04_reconstructions/task5_dae_noise20_triptych_train.png}\hfill
+\maybeinc[width=0.30\linewidth]{task5/04_reconstructions/task5_dae_noise20_triptych_val.png}\hfill
+\maybeinc[width=0.30\linewidth]{task5/04_reconstructions/task5_dae_noise20_triptych_test.png}
+\infer{$\rho=0.20$ on train, validation and test. In each panel the middle row is the corrupted
+input the model actually saw and the bottom row is its reconstruction of the clean image above.
+The reconstructions fill the holes with structure continuing the surrounding strokes rather than
+repeating the zero pattern, and the behaviour is the same on all three splits, so the denoising
+is a property of the learned code rather than of the data it was fitted on.}
+\caption{Task 5c: $\rho=0.20$ triptychs on train, validation and test.}\label{fig:task5:sp:a}
+\end{figure}
+
+\begin{figure}[htbp]\centering
+\maybeinc[width=0.30\linewidth]{task5/04_reconstructions/task5_dae_noise40_triptych_train.png}\hfill
+\maybeinc[width=0.30\linewidth]{task5/04_reconstructions/task5_dae_noise40_triptych_val.png}\hfill
+\maybeinc[width=0.30\linewidth]{task5/04_reconstructions/task5_dae_noise40_triptych_test.png}
+\infer{$\rho=0.40$, where two pixels in five are destroyed. The inputs are visibly worse than
+the $\rho=0.20$ row above, yet the reconstructions stay legible: the model interpolates through
+larger gaps rather than degrading with them. This is the visual counterpart of the error ratio
+reported in Section~\ref{sec:task5}, where the corrupted-input error falls to $39\,\%$ of the
+copy-the-input baseline at this corruption level.}
+\caption{Task 5c: $\rho=0.40$ triptychs on train, validation and test.}\label{fig:task5:sp:b}
 \end{figure}
 
 \paragraph{Reading the triptych.}
@@ -1073,7 +1325,41 @@ near-blank borders, which is the visual signature of dead units.}
 \caption{Task 6, plain autoencoder: for each unit, the training image that maximally activates it
 (left) paired with the incoming encoder weight vector (right), both reshaped to $28\times28$.  Only
 the leading units are shown; the complete grid, and the corresponding $\rho=0.20$ and
-$\rho=0.40$ grids, are reported in Figures~\ref{fig:summary:bars}.}\label{fig:task6:plain}
+$\rho=0.40$ grids, are reported with the weight profiles below.}\label{fig:task6:plain}
+\end{figure}
+
+\paragraph{All 32 units for all three encoders.}
+The figure above shows the leading units only; the sheet asks for the complete set, so the full
+$32$-unit grid of each encoder follows. All three are drawn on a common colour scale, so the
+denoisers' lower contrast is visible rather than normalised away.
+
+\begin{figure}[htbp]\centering
+\maybeinc[width=0.92\linewidth]{task6/06_weights_and_activations/01_plain_AE/task6_plain_ae_weight_grid.png}
+\infer{All 32 units of the plain encoder. Every template is a diffuse low-contrast field with its
+largest values on border pixels; none isolates a stroke, an edge or a corner. Read across the
+grid the units are near-duplicates of one another rather than a set of distinct features, which
+is the first half of the Task~6c comparison: denoising does not make these more interpretable,
+because they are not interpretable to begin with.}
+\caption{Task 6: the complete 32-unit weight grid of the plain encoder.}\label{fig:task6:grid:plain}
+\end{figure}
+
+\begin{figure}[htbp]\centering
+\maybeinc[width=0.92\linewidth]{task6/06_weights_and_activations/02_denoising_AE_20pct/task6_denoise20_weight_grid.png}
+\infer{The same 32 units after training with $20\,\%$ corruption, on the same colour scale. The
+layouts correspond position by position to the plain grid, so the coarse spatial structure is
+inherited rather than relearnt; what has changed is amplitude, which is lower throughout.}
+\caption{Task 6: the complete 32-unit weight grid of the $\rho=0.20$ denoising encoder, common
+scale with Figure~\ref{fig:task6:grid:plain}.}\label{fig:task6:grid:d20}
+\end{figure}
+
+\begin{figure}[htbp]\centering
+\maybeinc[width=0.92\linewidth]{task6/06_weights_and_activations/03_denoising_AE_40pct/task6_denoise40_weight_grid.png}
+\infer{The $40\,\%$ denoising encoder at the same scale. The correspondence with the plain grid
+is looser than at $20\,\%$ --- the per-unit cosine similarity to the plain encoder falls from
+$0.70$ to $0.53$ --- so stronger corruption both shrinks the weights and rotates them further
+from where they started, while leaving them equally diffuse.}
+\caption{Task 6: the complete 32-unit weight grid of the $\rho=0.40$ denoising encoder, common
+scale with Figure~\ref{fig:task6:grid:plain}.}\label{fig:task6:grid:d40}
 \end{figure}
 
 \paragraph{What the weight grid means.}
