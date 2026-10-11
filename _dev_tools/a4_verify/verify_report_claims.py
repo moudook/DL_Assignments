@@ -1,4 +1,4 @@
-"""Check every quantitative claim in the report's inference blocks against the run's own data."""
+﻿"""Check every quantitative claim in the report's inference blocks against the run's own data."""
 
 import json
 import os
@@ -251,6 +251,21 @@ means_arr = np.stack([means[v] for v in order])
 sd = np.stack([data["train"][v].std(axis=0) if hasattr(data["train"][v], "std") else None
                for v in order]) if False else None
 check("mean images are recognisable (nonzero, digit-shaped)", means_arr.max() > 0.2)
+
+print("\n[B8b] train-test gap widens monotonically with k (supports the fixed-width-first-layer reading)")
+gaps = []
+for k in sorted(t1["by_dimension"], key=int):
+    v = t1["by_dimension"][k]
+    gaps.append((int(k), 100 * v["train_accuracy"] - 100 * v["test_accuracy"]))
+print("      gaps:", [(k, round(g, 4)) for k, g in gaps])
+check("gap increases monotonically with k", all(gaps[i][1] < gaps[i + 1][1] for i in range(len(gaps) - 1)),
+      " -> ".join(f"{g:.2f}" for _, g in gaps))
+check("quoted gaps 1.71/1.97/2.41/2.77",
+      all(close(g, want, 0.006) for (_, g), want in zip(gaps, (1.71, 1.97, 2.41, 2.77))))
+tr32 = 100 * t1["by_dimension"]["32"]["train_accuracy"]
+tr256 = 100 * t1["by_dimension"]["256"]["train_accuracy"]
+check("train accuracy rises 99.95 -> 100.00", close(tr32, 99.95, 0.01) and close(tr256, 100.0, 0.001),
+      f"{tr32:.4f} -> {tr256:.4f}")
 
 print("\n" + "=" * 64)
 print(f"PASSED {len(OK)}   FAILED {len(FAIL)}")
