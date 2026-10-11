@@ -213,8 +213,7 @@ print("      flagged: " + ", ".join(
     for s, v in load(n)[k].items() for a in (v.get("degenerate_archs") or [])))
 
 print("\n" + "=" * 64)
-print(f"PASSED {len(FAIL) * 0 + (len(FAIL) == 0 and 'all' or len(FAIL))}  FAILED {len(FAIL)}")
-if FAIL:
-    for f in FAIL:
-        print("  - " + f)
+print(f"FAILED: {len(FAIL)}")
+for f in FAIL:
+    print("  - " + f)
 sys.exit(1 if FAIL else 0)

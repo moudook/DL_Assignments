@@ -1,4 +1,4 @@
-# Architecture Decision Record
+﻿# Architecture Decision Record
 
 Every decision here was forced by a specific, measured problem. Each entry names the
 problem, the evidence, the fix, and how it was verified — so a reader can check the
@@ -413,7 +413,7 @@ status.
 
 **Status:** Accepted.
 
-**Problem.** `scripts/verify.py` was written to restate six claims from this document
+**Problem.** the dev-only `verify.py` was written to restate six claims from this document
 against a finished run. All six passed on the first execution. Two of them passed because
 they were reading the wrong nesting level of the result JSON and could not have failed:
 the degeneracy check looked for `terminal_state` at the container level, where only
@@ -446,7 +446,7 @@ at least once on data that should fail it.
 
 **Problem.** The inference blocks under each figure were written by reading the figures.
 Every one looked right, and every one was checked against the code and the JSON. Neither
-is enough. `scripts/verify_report_claims.py` re-derives 58 quantitative claims from
+is enough. the dev-only `verify_report_claims.py` re-derives 58 quantitative claims from
 `results_final/` and found ten errors, six of them of the same kind:
 
 | claim | said | was |
@@ -470,12 +470,12 @@ the nearest "about", a trend read off a line where no reversal exists, a hardest
 asserted where the ordering is not actually stable.
 
 **Decision.** Every number in the prose is now produced by a script rather than by eye.
-`scripts/verify_report_claims.py` is the mechanism, and it fails loudly when a claim is
+the dev-only `verify_report_claims.py` is the mechanism, and it fails loudly when a claim is
 wrong rather than when it is merely absent --- the same lesson as ADR-017, applied one
 level up.
 
 **What did not change.** Every headline result in the tables was already verified against
-the run's own artefacts by `scripts/verify.py`. The errors were confined to the new
+the run's own artefacts by the dev-only `verify.py`. The errors were confined to the new
 interpretive prose, which is exactly the part that had no automated check behind it.
 
 **Lesson recorded.** Prose is code. A number written in a sentence is a number that
@@ -492,8 +492,7 @@ weak form of trust: the JSON is what the pipeline believed, and a bug in the wri
 would be invisible to a check that reads it back. The only artifact not yet used as
 evidence is the trained weights themselves.
 
-**What was done.** `scripts/verify_from_checkpoints.py` and
-`scripts/verify_ae_from_checkpoints.py` rebuild the PCA and autoencoder codes from
+**What was done.** `verify_from_checkpoints.py` and `verify_ae_from_checkpoints.py` rebuild the PCA and autoencoder codes from
 `results_final/checkpoints/`, re-predict all $3\,795$ test labels from the stored
 classifier weights, and recompute the confusion matrices and reconstruction errors
 without reading a single reported number until after the fact.
@@ -523,9 +522,11 @@ scripts now instantiate the project's own `FCNN` and `Autoencoder` classes and l
 stored `state_dict` into them, so a change to the model definition cannot silently
 desynchronise the check from the code.
 
-**Decision.** Record the five suites as `make verify-all`. The weight-based suites are
-the authoritative ones; the JSON-based suites exist to catch bookkeeping errors the
-weight-based check cannot see, such as a wrong width recorded next to a correct model.
+**Decision.** The five suites live outside the submission, in `_dev_tools/a4_verify/`,
+and are run from the code directory; they are development tooling, not deliverables, so
+keeping them out of the submitted folder is deliberate. The weight-based suites are the
+authoritative ones; the JSON-based suites exist to catch bookkeeping errors the weight-based
+check cannot see, such as a wrong width recorded next to a correct model.
 
 **Lesson recorded.** A check that reads back the system's own output tests only
 consistency. Testing truth requires recomputing it from something the system did not
@@ -554,5 +555,5 @@ condition that makes it true — the report is only printed when `task1.json` ac
 
 **Verification.** A `--quick` run now produces a figure whose confusion and rank panels are
 populated, not placeholder text. The check was done by reading the image, not by reading
-the log: `scripts/verify.py` also asserts the figure exceeds the byte size of the
+the log: the dev-only `verify.py` also asserts the figure exceeds the byte size of the
 placeholder version.

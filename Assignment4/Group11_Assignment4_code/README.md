@@ -29,13 +29,13 @@ autoencoder" — so the pipeline is sequential by requirement.
 | `--archs 3L_A 5L_A` | override the classifier grid |
 | `--retrain-aes` | force the autoencoders to retrain instead of reusing Task-2's |
 
-A `Makefile` wraps the two useful invocations:
+A `Makefile` wraps the common invocations:
 
 ```
 make quick      # ~1 min, verifies the pipeline works, results are meaningless
 make train      # the real thing, ~22 min, writes results_final/
-make verify     # re-derive the headline numbers from the run's own artefacts
-make report     # compile report/report.tex
+make report     # compile report/report.tex twice
+make check      # compile-check and import-check every module
 ```
 
 Modules other than `run_all.py` are stages, not entry points. There is no `v2`, no

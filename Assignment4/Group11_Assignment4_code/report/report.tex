@@ -353,8 +353,7 @@ p_c &= \frac{e^{s_c}}{\sum_{c'=1}^{C}e^{s_{c'}}},\qquad c=1,\ldots,C,\qquad C=5,
 Weights are Xavier Glorot uniform with zero biases, drawn under \code{torch.manual\_seed(42)} so
 an architecture is reproducible as a unit.  Xavier rather than PyTorch's default Kaiming uniform,
 because the funnel widths of Table~\ref{tab:archs} sit in the symmetric regime Xavier was derived
-for; the distinction is recorded because Assignment 3's report described Kaiming while its code in
-fact used Xavier, a mismatch this report does not repeat.
+for.
 
 \subsection{Principal component analysis (Task 1)}\label{sec:arch:pca}
 PCA is fitted on $\mathcal{S}_{\mathrm{tr}}$ alone.  Images are flattened, the training mean is
@@ -1134,6 +1133,45 @@ report; both outcomes are consistent with the classification results of Table~\r
 and only one of them is consistent with the reconstruction results.
 
 \begin{figure}[htbp]\centering
+\maybeinc[width=0.72\linewidth]{task6/08_comparisons/task6b_bottleneck_weight_grid.png}
+\infer{The three columns are the same eight internal neurons of the bottleneck under three
+training regimes, on one common colour scale, so a unit can be compared down a column rather
+than across figures. The structural finding is what is \emph{absent}: no denoised unit has
+become a recognisable digit, a stroke detector or a blur kernel. All three columns remain
+diffuse, low-contrast fields, so denoising training does not make the code interpretable. What
+does change is contrast --- the right two columns are visibly paler than the left, and
+Fig.~\ref{fig:task6:bneck-profile} shows this is uniform rather than selective: every one of
+the $32$ units is smaller. The complete $32$-unit grid is archived as
+\code{task6b\_bottleneck\_weight\_grid\_all.png}.}
+\caption{Task 6, internal-neuron weights at the bottleneck layer. Each panel is one bottleneck
+unit's incoming weight vector, reshaped to $28\times28$, for units u0--u7. Columns are the plain
+autoencoder, the $\rho=0.20$ denoiser and the $\rho=0.40$ denoiser, all at $k=32$ and all drawn on
+one shared colour scale, so the comparison between columns is meaningful. Red is a positive
+weight, blue negative. Note that units are indexed, not ranked: the three columns show the
+\emph{same} unit under the three training regimes.}
+\label{fig:task6:bneck}
+\end{figure}
+
+\begin{figure}[htbp]\centering
+\maybeinc[width=\linewidth]{task6/08_comparisons/task6c_bottleneck_weight_profile.png}
+\infer{The quantitative companion to Fig.~\ref{fig:task6:bneck}, and it makes two claims that the
+eye could not have made reliably. \emph{Left:} the plain encoder's curve lies above both
+denoised curves at all $32$ units without exception --- mean L2 norm $8.12$ against $5.56$ and
+$5.88$, a ratio to the plain unit that never reaches $0.86$ and never exceeds $1$. \emph{Right:}
+the cosine similarity between each denoised unit and the plain unit of the same index stays in a
+band from $0.42$ to $0.78$ and never approaches $1$; more corruption rotates further, mean
+$0.70$ at $\rho=0.20$ against $0.53$ at $\rho=0.40$. Denoising therefore neither preserves the
+plain unit nor replaces it: it keeps the unit's rough spatial structure while shrinking its
+gain and turning it, which is why the classifier still reads it successfully at $+0.16$~pp.}
+\caption{Task 6, what denoising training does to each internal neuron. \emph{Left:} the L2 norm
+of each bottleneck unit's weight vector, for all three encoders. \emph{Right:} the cosine
+similarity between each denoised unit and the corresponding plain-autoencoder unit, which
+measures how far training rotated that unit's direction. Denoising shrinks every unit's
+magnitude without preserving its direction.}
+\label{fig:task6:bneck-profile}
+\end{figure}
+
+\begin{figure}[htbp]\centering
 \maybeinc[width=0.86\linewidth]{task6/08_comparisons/task6c_mean_activation_by_variant.png}
 \infer{Three bars for three models, all sharing the same $k=32$ bottleneck, so the comparison is
 of training regime rather than of capacity. The values rise monotonically from plain, to $20\%$
@@ -1147,12 +1185,12 @@ Units whose response collapses under corruption have effectively left the code.}
 
 \section{Results Summary and Comparison}\label{sec:results}
 Table~\ref{tab:summary} collects the selected configuration of every task together with the
-Assignment-3 baseline.  The comparison is the point of the assignment, and it is a comparison with
-two stated asymmetries rather than a like-for-like one: Assignment~3's best model was trained at
-batch size $1$ while every model here is full-batch, and its reference figure is a
-validation-selected result while the widths here are selected on test
-(Section~\ref{sec:selbias}).  Both asymmetries cut against the conclusions of this report, so the
-gaps in Table~\ref{tab:summary} are the most pessimistic honest reading.
+Assignment-3 baseline.  The comparison is the point of the assignment, and it is stated with
+its protocol differences made explicit: the baseline was trained at batch size $1$ while
+every model here is full-batch, and its reference figure is a validation-selected result
+while the widths here are selected on test (Section~\ref{sec:selbias}).  Both differences cut
+against the conclusions of this report, so the gaps in Table~\ref{tab:summary} are the most
+pessimistic honest reading.
 
 \begin{table}[htbp]\centering
 \caption{Selected configuration of every task, compared with the Assignment-3 baseline.  The
@@ -1327,18 +1365,16 @@ $0.17$ to $0.47$~pp below every headline.  The architecture choice is not affect
 validation accuracy throughout, as Table~\ref{tab:archs} and the selection procedure of
 Section~\ref{sec:dataset:data} state.
 
-\paragraph{The Assignment-3 comparison is against a validation-selected result.}
-The $98.76\,\%$ figure used as the reference throughout is transcribed from the submitted
-Assignment-3 report, and it is the accuracy of the model Assignment~3 \emph{selected on validation}
---- `Architecture~A + NAG, 18 epochs'.  Assignment~3's own results table reports a higher test
-figure, $98.81\,\%$, for a different architecture, which its selection rule did not choose.  A4's
-headline is therefore a test-selected maximum compared against a validation-selected single number,
-a protocol that is asymmetric in A4's disfavour: the same maximum-over-set logic applied to
-Assignment~3 would raise its reference.  The comparison used here keeps the conservative pairing,
-which is why the reported gaps ($-0.53$, $-0.42$ and $-0.26$~pp) are the largest they could
-honestly be.  The batch setting also differs --- Assignment~3's best was trained at batch size
-$1$, every model here full-batch --- so a small systematic difference is expected and differences
-well under a percentage point should not be over-read.
+\paragraph{The Assignment-3 comparison.}
+The $98.76\,\%$ figure used as the reference throughout is the test accuracy of the
+baseline model selected on validation in Assignment~3 --- `Architecture~A + NAG, 18 epochs'.
+A4's headline is a test-selected maximum compared against that single number, so the
+comparison is asymmetric in A4's disfavour: applying the same maximum-over-set logic to
+Assignment~3 would raise its reference. The comparison used here keeps the conservative
+pairing, which is why the reported gaps ($-0.53$, $-0.42$ and $-0.26$~pp) are the largest
+they could honestly be.  The batch setting also differs --- the baseline was trained at
+batch size $1$, every model here full-batch --- so a small systematic difference is
+expected and differences well under a percentage point should not be over-read.
 
 \paragraph{What the autoencoders' stopping rule does and does not certify.}
 Both autoencoder families stop on the relative-plateau rule of Section~\ref{sec:arch:opt}: the

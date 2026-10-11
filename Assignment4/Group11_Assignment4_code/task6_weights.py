@@ -199,6 +199,7 @@ def run_task6(data, outdir="results", max_epochs=MAX_EPOCHS, device=None,
         results["variants"][key] = {
             "title": title,
             "k": ma["k"],
+            "weights": np.asarray(ma["weights"]).tolist(),
             "activations": acts,
             "activation_abs_max": [abs(a) for a in acts],
             "n_negative_units": sum(1 for a in acts if a < 0),
@@ -218,6 +219,18 @@ def run_task6(data, outdir="results", max_epochs=MAX_EPOCHS, device=None,
         p_cmp = save_comparison(fig, ax, os.path.join(
             cmp_dir, "task6c_comparison_activation_by_unit.png"))
         results["comparison_figure"] = p_cmp
+
+        results["bottleneck_grid_figure"] = plt_bottleneck_grid(
+            results["variants"], plot_keys, n_show,
+            os.path.join(cmp_dir, "task6b_bottleneck_weight_grid_all.png"))
+        results["bottleneck_sample_figure"] = plt_bottleneck_sample(
+            results["variants"], plot_keys, n_show,
+            os.path.join(cmp_dir, "task6b_bottleneck_weight_grid.png"))
+        results["bottleneck_profile_figure"] = plt_bottleneck_profile(
+            results["variants"], plot_keys,
+            os.path.join(cmp_dir, "task6c_bottleneck_weight_profile.png"))
+        print(f"  bottleneck comparison: {results['bottleneck_sample_figure']}")
+        print(f"                        {results['bottleneck_profile_figure']}")
 
         summary = {}
         for k in keys:
@@ -256,6 +269,125 @@ def run_task6(data, outdir="results", max_epochs=MAX_EPOCHS, device=None,
                       os.path.join(outdir, "task6.json"))
     print(f"\nwrote {os.path.join(outdir, 'task6.json')}")
     return results
+
+
+def plt_bottleneck_grid(variants, keys, n_show, path):
+    """
+    Side-by-side internal-neuron weight maps: one column per variant, one row per
+    bottleneck unit, so the same unit can be compared across training regimes
+    directly.
+    """
+    import matplotlib.pyplot as plt
+    n = min(n_show, len(variants[keys[0]]["weights"]))
+    cols = len(keys)
+    fig, axes = plt.subplots(n, cols, figsize=(2.0 * cols, 2.0 * n), squeeze=False)
+    allw = np.concatenate([np.asarray(variants[k]["weights"][:n]).ravel() for k in keys])
+    vmax = float(np.abs(allw).max())
+
+    for c, k in enumerate(keys):
+        W = np.asarray(variants[k]["weights"][:n])
+        for r in range(n):
+            ax = axes[r][c]
+            ax.imshow(W[r].reshape(28, 28), cmap="RdBu_r", vmin=-vmax, vmax=vmax,
+                      interpolation="nearest")
+            ax.set_xticks([])
+            ax.set_yticks([])
+            for s in ax.spines.values():
+                s.set_linewidth(0.3)
+            if r == 0:
+                ax.set_title(f"{variants[k]['title']}\nk={variants[k]['k']}",
+                             fontsize=8, pad=6)
+            if c == 0:
+                ax.set_ylabel(f"u{r}", fontsize=7, rotation=0, labelpad=14,
+                              va="center")
+
+    fig.suptitle("Internal-neuron weights at the bottleneck layer: "
+                 "same units, three training regimes\n"
+                 "red = positive weight, blue = negative, common scale",
+                 fontsize=10)
+    fig.tight_layout(rect=(0, 0, 1, 0.96))
+    return plots.save_atomic(fig, path)
+
+
+def plt_bottleneck_sample(variants, keys, n_show, path, n_units=8):
+    """
+    Readable subset of the bottleneck grid: the first n_units internals, laid out
+    one row per unit with all variants side by side. This is the figure a reader
+    can actually inspect; the full 32-unit version is archived alongside it.
+    """
+    import matplotlib.pyplot as plt
+    n = min(n_units, n_show, len(variants[keys[0]]["weights"]))
+    cols = len(keys)
+    fig, axes = plt.subplots(n, cols, figsize=(1.7 * cols, 1.7 * n), squeeze=False)
+    allw = np.concatenate([np.asarray(variants[k]["weights"][:n]).ravel() for k in keys])
+    vmax = float(np.abs(allw).max())
+
+    for c, k in enumerate(keys):
+        W = np.asarray(variants[k]["weights"][:n])
+        for r in range(n):
+            ax = axes[r][c]
+            ax.imshow(W[r].reshape(28, 28), cmap="RdBu_r", vmin=-vmax, vmax=vmax,
+                      interpolation="nearest")
+            ax.set_xticks([])
+            ax.set_yticks([])
+            for s in ax.spines.values():
+                s.set_linewidth(0.4)
+            if r == 0:
+                short = variants[k]["title"].split(",")[0]
+                ax.set_title(f"{short}\nk={variants[k]['k']}", fontsize=7.5, pad=5)
+            if c == 0:
+                ax.set_ylabel(f"u{r}", fontsize=7.5, rotation=0, labelpad=12,
+                              va="center")
+
+    fig.suptitle("Internal-neuron weights at the bottleneck layer, units u0-u%d:\n"
+                 "vanilla autoencoder against both denoising autoencoders "
+                 "(common colour scale, red positive / blue negative)" % (n - 1),
+                 fontsize=10)
+    fig.tight_layout(rect=(0, 0, 1, 0.93))
+    return plots.save_atomic(fig, path)
+
+
+def plt_bottleneck_profile(variants, keys, path):
+    """
+    Quantitative companion to the grid: per-unit L2 weight norm, which says how
+    much signal each unit actually carries, alongside the cosine similarity between
+    each denoising encoder and the plain one.
+    """
+    import matplotlib.pyplot as plt
+    n = min(len(variants[keys[0]]["weights"]),
+            min(len(variants[k]["weights"]) for k in keys))
+    base = np.asarray(variants[keys[0]]["weights"][:n])
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12.5, 4.0))
+
+    for k in keys:
+        W = np.asarray(variants[k]["weights"][:n])
+        norms = np.linalg.norm(W, axis=1)
+        ax1.plot(np.arange(n), norms, marker="o", ms=4, lw=1.4,
+                 label=variants[k]["title"])
+        if k != keys[0]:
+            cs = [float(np.dot(base[i], W[i]) /
+                        (np.linalg.norm(base[i]) * np.linalg.norm(W[i]) + 1e-12))
+                  for i in range(n)]
+            ax2.plot(np.arange(n), cs, marker="s", ms=4, lw=1.4,
+                     label=variants[k]["title"])
+
+    ax1.set_xlabel("bottleneck unit")
+    ax1.set_ylabel("L2 norm of that unit's weight vector")
+    ax1.set_title("Weight magnitude per internal neuron")
+    ax1.grid(alpha=0.3)
+    ax1.legend(fontsize=7)
+
+    ax2.set_xlabel("bottleneck unit")
+    ax2.set_ylabel("cosine similarity with the plain AE's unit")
+    ax2.set_title("Directional change caused by denoising training")
+    ax2.set_ylim(-1, 1)
+    ax2.axhline(0.0, color="0.4", lw=0.8, ls="--")
+    ax2.grid(alpha=0.3)
+    ax2.legend(fontsize=7)
+
+    fig.suptitle("Quantifying what denoising does to the internal neurons", fontsize=10)
+    fig.tight_layout(rect=(0, 0, 1, 0.94))
+    return plots.save_atomic(fig, path)
 
 
 def plt_unit_comparison(variants, keys, n_show):
