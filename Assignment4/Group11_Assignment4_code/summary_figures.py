@@ -3,7 +3,7 @@ summary_figures.py — cross-task comparison figures.
 
 Everything else lives under a task's own folder. This module produces the
 figures that only exist ACROSS tasks, which are the ones the report's
-conclusions rest on: every representation method against the A3 baseline, every
+conclusions rest on: every representation method against the Assignment-3 baseline, every
 task's best against every other task's best, and per-class comparison so the
 error structure of each representation is comparable.
 
@@ -74,7 +74,7 @@ def build_summary(outdir):
 
     if best:
         series = dict(best)
-        series["A3 baseline"] = A3_TEST_ACC
+        series["Assignment-3 baseline"] = A3_TEST_ACC
         plots.comparison_bars(
             series,
             "Best test accuracy per task, against the Assignment-3 baseline",
@@ -112,7 +112,7 @@ def build_summary(outdir):
             os.path.join(summary_dir, "summary_accuracy_vs_dimension.png"),
             xlabel="retained dimension / bottleneck size",
             ylabel="test accuracy (%)",
-            ref=100 * A3_TEST_ACC, ref_label="A3 baseline 98.76%")
+            ref=100 * A3_TEST_ACC, ref_label="Assignment-3 baseline 98.76%")
 
         plots.dimension_bars(
             per_task_curves,
@@ -120,7 +120,7 @@ def build_summary(outdir):
             "Test accuracy by representation size and method",
             os.path.join(summary_dir, "summary_accuracy_bars.png"),
             ref=100 * A3_TEST_ACC,
-            ref_label="A3 baseline 98.76%")
+            ref_label="Assignment-3 baseline 98.76%")
 
     per_class = {}
     for t in present:
@@ -323,7 +323,7 @@ def write_index(outdir, summary_dir, present):
         name = INDEX.get(t, f"task {t}")
         lines.append(f"plots/task{t}/   {name}")
     lines.append("")
-    lines.append("plots/00_summary/  cross-task comparisons and the A3 baseline")
+    lines.append("plots/00_summary/  cross-task comparisons and the Assignment-3 baseline")
     lines.append("")
     lines.append("plots/00_dataset/  what the DATA looks like, before any model")
     lines.append("")

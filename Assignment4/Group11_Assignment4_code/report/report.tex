@@ -114,8 +114,9 @@ $20\,\%$ and $40\,\%$ masked-pixel corruption give Task 5; and the maximally act
 image plus the incoming encoder weight of each bottleneck unit give Task 6.  The principal
 empirical finding is that a learned nonlinear code matches or slightly exceeds the linear PCA code of the same width at
 every width measured: the one-hidden code leads PCA by $+0.11$~pp at $k=32$, $+0.05$~pp at $k=64$,
-$+0.50$~pp at $k=128$ and $+0.95$~pp at $k=256$.  The strongest single configuration is the
-three-hidden encoder at $k=64$ ($98.50\,\%$); and that the learned code keeps the same per-class
+$+0.50$~pp at $k=128$ and $+0.95$~pp at $k=256$.  The strongest configurations are the three-hidden
+encoder at $k=64$ and the $\rho=0.20$ denoising code at $k=32$, both at $98.50\,\%$.
+We further find that the learned code keeps the same per-class
 error profile rather than creating new failure modes; that the deepest \emph{classifier}
 architecture, not the deepest encoder, is what disables training outright, collapsing to
 $58.8\text{--}79.5\,\%$ in six
@@ -147,11 +148,17 @@ divided by $C=5$.}\label{tab:dataset}
 \toprule Split & Total & Digit 0 & Digit 4 & Digit 5 & Digit 6 & Digit 7 & Share \\ \midrule
 Train & 11\,385 & 2\,277 & 2\,277 & 2\,277 & 2\,277 & 2\,277 & 60.0\,\% \\
 Val   & 3\,795  & 759    & 759    & 759    & 759    & 759    & 20.0\,\% \\
-Test  & 3\,795  & 759    & 759    & 759    & 759    & 759    & 20.0\,\% \\ \midrule
+Test & 3\,795  & 759    & 759    & 759    & 759    & 759    & 20.0\,\% \\ \midrule
 Total & 18\,975 & 3\,795 & 3\,795 & 3\,795 & 3\,795 & 3\,795 & 100\,\% \\
 \bottomrule
 \end{tabular}
 \end{table}
+
+For each representation the classifier architecture is chosen on validation accuracy and the
+bottleneck width on test accuracy, as the assignment asks which width classifies best.  Test
+accuracy is computed for every (architecture, $k$) pair, so the width choice is made over a
+recorded set of sixteen numbers per task rather than over one number made for the purpose;
+Section~\ref{sec:selbias} measures how optimistic a maximum over such a set is.
 
 \subsection{What the data look like}\label{sec:dataset:eda}
 Before any model is fitted, four figures record what the raw input is.  They are reproduced
@@ -284,8 +291,8 @@ $\Acc_{\mathrm{val}},\Acc_{\mathrm{test}}$ & Validation and test accuracy. \\
 \end{table}
 
 \subsection{Baseline and metrics}\label{sec:dataset:baseline}
-The reference point for every comparison is the best raw-input FCNN from the previous
-assignment, $\mathrm{A\_128\_64\_32}$ ($784\rightarrow128\rightarrow64\rightarrow32\rightarrow5$)
+The reference point for every comparison is the best FCNN of Assignment 3, the raw-input
+model $\mathrm{A\_128\_64\_32}$ ($784\rightarrow128\rightarrow64\rightarrow32\rightarrow5$)
 trained with Nesterov-accelerated gradient descent, which reached $\Acc_{\mathrm{val}}=98.84\,\%$
 and $\Acc_{\mathrm{test}}=98.76\,\%$ in 18 epochs.  Accuracy, the test confusion matrix and its
 row-normalised version, per-class recall, and the mean squared reconstruction error of
@@ -757,9 +764,9 @@ is directly comparable.}\label{fig:task2:err}
 The first check in Figure~\ref{fig:task2:err} is whether the three curves of a family move together
 or fan out.  If train, val and test coincide at small $k$ and separate at large $k$, the autoencoder
 is interpolating the training set rather than learning a code, and the point of separation is the
-width at which the code stops generalising; if the gap stays a roughly constant factor of two
-across $k$, the bottleneck is acting as a sufficient statistic at every width measured, with a
-steady train-test offset rather than a widening one.  The second
+width at which the code stops generalising.  The test-to-train ratio does grow with width for the
+one-hidden family, from $1.09$ at $k=32$ to $1.44$ at $k=256$, so the gap widens as the code
+narrows.  The second
 check is the family separation: because the three-hidden family has a fixed $\approx628\,784$
 parameters regardless of $k$ (Table~\ref{tab:aeparams}), it can afford an extremely nonlinear map
 for a narrow code, and the question is whether that nonlinearity buys a lower $E_{\mathrm{rec}}$ at
@@ -789,8 +796,8 @@ exactly these thin features --- the pixels that distinguish one digit from anoth
 $32$-dimensional code cannot afford to keep.}
 \caption{Task 2, one-hidden family, $k=32$: originals (top) and reconstructions (bottom) for one
 image per class from the test split.  Read together with the $k=64,128,256$ panels of the same
-folder and with the corresponding three-hidden panels archived in the
-appendix.}\label{fig:task2:recon1}
+folder and with the corresponding three-hidden panels in the same figure
+group.}\label{fig:task2:recon1}
 \end{figure}
 
 \section{Task 3: Classification from the One-Hidden Autoencoder}\label{sec:task3}
@@ -851,7 +858,7 @@ confusion matrix is Figure~\ref{fig:task3:cm}.  Both claims hold.  The $5\leftri
 confusion remains the dominant off-diagonal mass, and the ranking of classes by recall is close to
 PCA's, so the learned code inherited the error structure of the problem rather than reshaping it.
 The ranking is not identical: PCA's hardest class is $7$ ($98.02\,\%$) while the one-hidden code's
-is $6$ ($97.50\,\%$), so $6$ and $7$ swap the two bottom places.  It should be recorded, however, that $k=32$ --- not $k=256$ --- is the
+is $6$ ($97.50\,\%$): the one-hidden code pushes $6$ from third-hardest to hardest.  It should be recorded, however, that $k=32$ --- not $k=256$ --- is the
 best one-hidden width: at $k=256$ the one-hidden code reaches $98.18\,\%$, which is below PCA's
 best width ($98.23\,\%$) rather than above it.
 
@@ -992,14 +999,15 @@ corrupted reconstruction is an easier target than the clean one.}\label{fig:task
 \maybeinc[width=0.78\linewidth]{task5/04_reconstructions/task5_dae_noise20_triptych_test.png}
 \infer{Three rows, and the row to study is the middle one. The corrupted inputs are recognisably the
 same digits with a scattering of black holes where pixels were zeroed; the reconstructions below
-them are nearly indistinguishable from the clean top row, not from the corrupted middle row. The
+them are visibly blurrier than the clean top row, though closer to it than to the corrupted middle row. The
 model has learned to fill the holes rather than to reproduce them, which is what Eq.~\eqref{eq:dae}
 asks of it. Comparing row three against row one gives the $59\%$ of baseline figure of
 Fig.~\ref{fig:obs:denoise}; comparing it against row two would give a much more flattering but
 meaningless number.}
 \caption{Task 5, $\rho=0.20$: clean original, corrupted input and reconstruction for one image per
 class from the test split.  The middle row is the model's actual input; the third row is its
-estimate of the top row.  The $\rho=0.40$ triptych is archived in the appendix.}
+estimate of the top row.  The $\rho=0.40$ triptych shows the same three rows at the higher
+corruption level.}
 \label{fig:task5:trip20}
 \end{figure}
 
@@ -1065,7 +1073,7 @@ near-blank borders, which is the visual signature of dead units.}
 \caption{Task 6, plain autoencoder: for each unit, the training image that maximally activates it
 (left) paired with the incoming encoder weight vector (right), both reshaped to $28\times28$.  Only
 the leading units are shown; the complete grid, and the corresponding $\rho=0.20$ and
-$\rho=0.40$ grids, are archived in the appendix.}\label{fig:task6:plain}
+$\rho=0.40$ grids, are reported in Figures~\ref{fig:summary:bars}.}\label{fig:task6:plain}
 \end{figure}
 
 \paragraph{What the weight grid means.}
@@ -1081,14 +1089,14 @@ the unit is functioning as advertised, whereas if it shows an outlier the unit i
 atypical combination and carries little general information.
 
 \paragraph{Effect of the noise level.}
-Figure~\ref{fig:task6:cmp} aggregates the activation statistics across the three variants.  The
-comparison to draw is between the plain weight grid of Figure~\ref{fig:task6:plain} and the
-$\rho=0.20$ grid archived alongside it: if a unit's template sharpens under denoising training, the
-denoising objective has forced the unit to commit to a specific, less ambiguous feature, because a
-broad averaged template cannot disambiguate a corrupted pixel.  Whether that sharpening extends to
-$\rho=0.40$, or whether the templates degrade into noise at that corruption level, is the finding to
-report; both outcomes are consistent with the classification results of Table~\ref{tab:task5clf},
-and only one of them is consistent with the reconstruction results.
+The plain encoder's weight vectors are diffuse, low-contrast fields with large values on border
+pixels; none is a stroke detector.  Denoising does not change that.  Both denoisers' units are
+equally diffuse (Figure~\ref{fig:task6:plain} beside the two denoiser grids).  What changes is gain and direction: every one of
+the $32$ units has a smaller weight norm than its plain counterpart (mean $5.56$ and $5.88$
+against $8.12$), and cosine similarity to the plain unit of the same index averages $0.70$ at
+$\rho=0.20$ and $0.53$ at $\rho=0.40$ (Figure~\ref{fig:task6:cmp}).  Denoising keeps the coarse
+spatial layout while shrinking and rotating each template, and stronger corruption rotates it
+further, but it does not make the units more interpretable.
 
 \begin{figure}[htbp]\centering
 \maybeinc[width=0.72\linewidth]{task6/08_comparisons/task6b_bottleneck_weight_grid.png}
@@ -1139,12 +1147,11 @@ Units whose response collapses under corruption have effectively left the code.}
 
 \section{Results Summary and Comparison}\label{sec:results}
 Table~\ref{tab:summary} collects the selected configuration of every task together with the
-raw-input baseline.  The comparison is the point of the assignment, and it is stated with
-its protocol differences made explicit: the baseline was trained at batch size $1$ while
+Assignment-3 raw-input baseline.  The comparison is the point of the assignment, and it is stated
+with its protocol differences made explicit: the baseline was trained at batch size $1$ while
 every model here is full-batch, and its reference figure is a validation-selected result
-while the widths here are selected on test (Section~\ref{sec:selbias}).  Both differences cut
-against the conclusions of this report, so the gaps in Table~\ref{tab:summary} are the most
-pessimistic honest reading.
+while the widths here are selected on test (Section~\ref{sec:selbias}).  Both differences make the
+gaps in Table~\ref{tab:summary} smaller than an unbiased pairing would give.
 
 \begin{table}[htbp]\centering
 \caption{Selected configuration of every task, compared with the raw-input baseline.  The
@@ -1176,7 +1183,7 @@ width, so no configuration here beats the raw-input model.}
 \caption{Cross-task summary: validation and test accuracy against representation width for all
 methods on one axis.  This is the single figure that answers the assignment's central question,
 namely which representation buys the most accuracy per unit of width.  Per-task bars against the
-baseline are archived in the appendix.}\label{fig:summary:acc}
+baseline are given in Figure~\ref{fig:summary:bars}.}\label{fig:summary:acc}
 \end{figure}
 
 \begin{figure}[htbp]\centering
@@ -1240,7 +1247,7 @@ autoencoder family over PCA \emph{at matched width}, rather than the difference 
 maxima.  This is the figure that answers whether the nonlinear code is better without the
 confound of Section~\ref{sec:obs:falsing}.  The one-hidden code leads at every width, but by
 uneven margins: $+0.11$~pp at $k=32$, $+0.05$ at $k=64$, $+0.50$ at $k=128$ and $+0.95$ at
-$k=256$.  Since both curves fall with $k$ and PCA falls faster , most of the widening
+$k=256$.  Since the autoencoder curves are flat or falling while PCA falls, most of the widening
 gap is PCA degrading rather than the code improving --- so the matched-width comparison at small
 $k$ is the one that means what it appears to mean.}\label{fig:summary:gain}
 \end{figure}
@@ -1311,11 +1318,13 @@ validation accuracy throughout, as Table~\ref{tab:archs} and the selection proce
 Section~\ref{sec:dataset:data} state.
 
 \paragraph{The baseline comparison.}
-The $98.76\,\%$ figure used as the reference throughout is the test accuracy of the
-best raw-input model.  A4's headline is a test-selected maximum compared against that single
-number, which is the least favourable pairing available: a maximum taken over a set is always at
-or above the average of that set, so comparing our best against their single best keeps the
-reported gaps ($-0.53$, $-0.42$ and $-0.26$~pp) as large as they could honestly be.
+The $98.76\,\%$ reference is the test accuracy of the Assignment-3 model selected on validation
+accuracy, so it carries no test-selection bias.  Our headline figures are maxima over four test
+scores and are therefore slightly optimistic, so the true gaps to the baseline are, if anything,
+larger than the $-0.53$, $-0.42$ and $-0.26$~pp of Table~\ref{tab:summary}; for Task~3 the
+validation-picked width gives $-0.68$~pp.  The baseline was also trained at batch size $1$ while
+every model here is full-batch, so differences well under one percentage point should not be
+over-read.
 
 \paragraph{What the autoencoders' stopping rule does and does not certify.}
 Both autoencoder families stop on the relative-plateau rule of Section~\ref{sec:arch:opt}: the
@@ -1383,7 +1392,7 @@ classifiers; not one is an encoder failure.  At $k=64$ and $k=128$ the three-hid
 the one-hidden encoder at every classifier depth, including 5L\_A --- $97.92$ against $77.87\,\%$
 at $k=64$, $98.08$ against $59.63\,\%$ at $k=128$ --- so the deeper encoder does not aggravate the
 deep-classifier failure and in fact rescues two runs that the one-hidden encoder loses entirely.
-The failure is confined to 5L\_A, appears in Tasks 1, 3 and 4, and gets worse with input width:
+The failure is confined to 5L\_A and appears in Tasks 1, 3 and 4, but it is not monotone in width:
 the same architecture is healthy at $k=32$ and collapses by $k=256$.  The reliable conclusion is
 that five stacked sigmoid layers of widths $64,32,16,8,4$ are a difficult optimisation problem in
 their own right, whose difficulty grows with the input dimension --- a property of the classifier,

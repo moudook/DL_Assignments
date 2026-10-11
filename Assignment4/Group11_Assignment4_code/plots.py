@@ -655,7 +655,7 @@ def comparison_bars(series, title, save_path, ylabel="test accuracy (%)",
     One labelled bar per entry; the best bar is highlighted.
 
     Used for every cross-configuration comparison: PCA against each AE kind and
-    the denoiser, all against the A3 baseline.
+    the denoiser, all against the Assignment-3 baseline.
     """
     fig, ax = plt.subplots(figsize=FIGSIZE_WIDE)
     names = list(series)
