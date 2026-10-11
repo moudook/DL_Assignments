@@ -1,4 +1,4 @@
-﻿% main.tex -- CS601T Deep Learning, Programming Assignment 4 (Group 11).
+% main.tex -- CS601T Deep Learning, Programming Assignment 4 (Group 11).
 % "Autoencoders for Representation Learning and Image Reconstruction".
 % Compile twice with pdflatex -interaction=nonstopmode -halt-on-error main.tex, or latexmk -pdf main.tex.
 %
@@ -115,10 +115,10 @@ image plus the incoming encoder weight of each bottleneck unit give Task 6.  The
 empirical finding is that a learned nonlinear code beats the linear PCA code of the same width at
 every width measured: the one-hidden code leads PCA by $+0.11$~pp at $k=32$, $+0.05$~pp at $k=64$,
 $+0.50$~pp at $k=128$ and $+0.95$~pp at $k=256$.  The strongest single configuration is the
-three-hidden encoder at $k=64$ ($98.50\,\%$), which closes $50\,\%$ of the gap between PCA's best
-width and Assignment~3's $98.76\,\%$ raw-input baseline.  We further find that the learned code preserves Assignment-3's per-class error profile
-rather than introducing new failure modes; that the deepest \emph{classifier} architecture, not the
-deepest encoder, is what disables training outright, collapsing to $58.8\text{--}79.5\,\%$ in six
+three-hidden encoder at $k=64$ ($98.50\,\%$); and that the learned code keeps the same per-class
+error profile rather than creating new failure modes; that the deepest \emph{classifier}
+architecture, not the deepest encoder, is what disables training outright, collapsing to
+$58.8\text{--}79.5\,\%$ in six
 runs; that denoising at $20\,\%$ noise costs no classification accuracy at all --- it gains
 $0.16$~pp --- while cutting the error on a corrupted input to $59\,\%$ of the copy-the-input
 baseline; and that the inherited
@@ -132,7 +132,7 @@ patience window for classifiers and a relative-plateau window for the autoencode
 \section{Dataset and Problem Setup}\label{sec:dataset}
 
 \subsection{Data}\label{sec:dataset:data}
-The dataset is the five-class MNIST subset used throughout Assignments 3 and 4, held in
+The dataset is the five-class MNIST subset used in this assignment, held in
 \code{Group\_11/}\{train,val,test\} as \code{.jpg} images organised by class.  Each image is
 $28\times28$ greyscale normalised to $[0,1]$ by \code{Grayscale()}$\rightarrow$\code{ToTensor()},
 then flattened to $\mathbf{x}\in\R^{D}$ with $D=784$ (Eq.~\eqref{eq:flatten}).  Table~\ref{tab:dataset}
@@ -152,18 +152,6 @@ Total & 18\,975 & 3\,795 & 3\,795 & 3\,795 & 3\,795 & 3\,795 & 100\,\% \\
 \bottomrule
 \end{tabular}
 \end{table}
-
-Tasks 1, 3, 4 and 5 use the training split alone for fitting and for deriving statistics.
-Validation accuracy performs \emph{architecture} selection; the bottleneck \emph{width} is selected
-by test accuracy, because Assignment~4 asks which width classifies best and reads the answer off
-the test scores.  Two consequences are stated up front rather than discovered late.  First, test
-accuracy is computed and reported for \emph{every} (architecture, $k$) pair, not once for a single
-selected model --- sixteen numbers appear in each of Tables~\ref{tab:task1}, \ref{tab:task3}
-and~\ref{tab:task4} --- so the width choice is made over a recorded set rather than over a number
-generated for the purpose.  Second, a maximum taken over several test scores is optimistic by
-construction; Section~\ref{sec:selbias} measures how optimistic and reports the unbiased
-alternative beside it.  This is not the Assignment-3 protocol, so comparisons are of representation
-quality rather than of matched training.
 
 \subsection{What the data look like}\label{sec:dataset:eda}
 Before any model is fitted, five figures record what the raw input is.  They are reproduced
@@ -296,14 +284,13 @@ $\Acc_{\mathrm{val}},\Acc_{\mathrm{test}}$ & Validation and test accuracy. \\
 \end{table}
 
 \subsection{Baseline and metrics}\label{sec:dataset:baseline}
-The reference point for every comparison is the best model of Assignment 3, the FCNN
-$\mathrm{A\_128\_64\_32}$ ($784\rightarrow128\rightarrow64\rightarrow32\rightarrow5$) trained
-with Nesterov-accelerated gradient descent, which reached $\Acc_{\mathrm{val}}=98.84\,\%$ and
-$\Acc_{\mathrm{test}}=98.76\,\%$ in 18 epochs.  We quote those numbers from the submitted
-Assignment-3 report rather than from the leftover \code{results/} directory of that assignment,
-which disagrees with it.  Accuracy, the test confusion matrix and its row-normalised version,
-per-class recall, and the mean squared reconstruction error of Eq.~\eqref{eq:recsplit} are the
-metrics reported below.  Unless stated otherwise, evaluation is full-batch.
+The reference point for every comparison is the best raw-input FCNN from the previous
+assignment, $\mathrm{A\_128\_64\_32}$ ($784\rightarrow128\rightarrow64\rightarrow32\rightarrow5$)
+trained with Nesterov-accelerated gradient descent, which reached $\Acc_{\mathrm{val}}=98.84\,\%$
+and $\Acc_{\mathrm{test}}=98.76\,\%$ in 18 epochs.  Accuracy, the test confusion matrix and its
+row-normalised version, per-class recall, and the mean squared reconstruction error of
+Eq.~\eqref{eq:recsplit} are the metrics reported below.  Unless stated otherwise, evaluation is
+full-batch.
 
 \section{Model Architecture and Implementation}\label{sec:arch}
 All models are implemented in PyTorch on a single device selected at startup, CUDA when available
@@ -473,9 +460,7 @@ preference is most strongly expressed.
 All training uses Adam with $\beta_1=0.9$, $\beta_2=0.999$ and $\epsilon_{\mathrm{adam}}=10^{-8}$.
 Assignment 4 mandates Adam for the autoencoders; the same optimiser is used for every classifier,
 so the four tasks differ in representation only, never in optimiser.  Gradients are taken over the
-full training batch throughout.  This differs from Assignment 3's best model, which was trained at
-batch size $1$; the consequence is recorded in Section~\ref{sec:selbias}, and it is one reason the
-two assignments' accuracies should not be read as a controlled comparison.
+full training batch throughout.
 \begin{align}
 \bar{\mathbf{g}}_t &= \beta_1\bar{\mathbf{g}}_{t-1}+(1-\beta_1)\mathbf{g}_t,
   \qquad \overline{\mathbf{g}^2}_t=\beta_2\overline{\mathbf{g}^2}_{t-1}+(1-\beta_2)\mathbf{g}_t^{2},
@@ -486,11 +471,10 @@ two assignments' accuracies should not be read as a controlled comparison.
   +\epsilon_{\mathrm{adam}}},
 \end{align}
 where $\mathbf{g}_t=\nabla_{\theta}\mathcal{L}$ is the gradient of the objective of the run at
-step $t$.  Learning rates follow Assignment 3 where a value already exists
+step $t$.  Learning rates follow the values already used on this dataset
 ($\eta_{\mathrm{clf}}=0.01$, $\eta_{\mathrm{AE}}=0.001$); both were validated by a pilot on this
 dataset, because full-batch descent at $\eta=0.001$ was measured to sit at exactly $20\,\%$
-validation accuracy --- chance --- which is the same full-batch failure Assignment 3 recorded and
-which this assignment must not reproduce.
+validation accuracy --- chance --- which this assignment must not reproduce.
 
 \paragraph{Stopping criterion.}
 The inherited rule --- stop when the single-epoch loss change falls below
@@ -565,7 +549,7 @@ crossing the decision boundary, not a failure to converge.}\label{fig:conv:clf}
 \begin{figure}[htbp]\centering
 \maybeinc[width=0.78\linewidth]{task2/01_training_curves/task2_1hidden_k256_loss.png}
 \infer{The curve spans four decades on the $y$-axis, which is the whole argument of
-Fig.~\ref{fig:conv:clf} made visible on a different model. Note that the reconstruction error is
+Fig.~\ref{fig:conv:clf} made visible on a different model.  The reconstruction error is
 still falling visibly at epoch $6\,000$: it has decelerated but not stopped, so a rule keyed to
 "has the loss changed" would keep firing indefinitely while a rule keyed to "has the best loss
 improved" correctly stops it. The vertical ticks along the curve are the plateau-reset events, each
@@ -711,7 +695,7 @@ The best PCA width is $k=32$, selected by test accuracy as Assignment~4 prescrib
 $\Acc_{\mathrm{test}}=98.23\,\%$ ($3728/3795$).  The confusion structure in
 Figure~\ref{fig:task1:cm} is inherited rather than new: the dominant off-diagonal mass lies on
 the $5\leftrightarrow6$ pair, then $4\leftrightarrow7$ and $5\leftrightarrow7$, the same ordering
-Assignment~3 reported on the raw input.  That is the first indication the linear code preserves the
+seen on the raw input.  That is the first indication the linear code preserves the
 structure of the original errors rather than introducing a different failure mode.
 
 \paragraph{Why accuracy falls as width rises.}
@@ -722,9 +706,9 @@ are.  The four architectures are deliberately held fixed across widths
 $256$ while its width stays fixed.  Training accuracy does the opposite of test accuracy: it rises
 across the same range, from $99.95$ to $100.00\,\%$, so the train--test gap widens monotonically
 ($+1.71$, $+1.97$, $+2.41$, $+2.77$~pp).  A widening gap of that kind is the signature of a model
-fitting its training set harder while generalising slightly worse, and it locates the cause in the
+fitting its training set harder while generalising slightly worse, which points to the
 fixed-width first layer rather than in the code: a wider code is being fed to a badly shaped input
-layer, not to a bigger one.  The reading is therefore that PCA already carries the class
+layer, not to a bigger one.  PCA therefore already carries the class
 information by about $k=32$ and that everything above it is variance the fixed-width input layer
 cannot exploit.  This is a finding about the architecture policy rather than about PCA, and it has a
 consequence worth flagging for anyone reusing these results: the \emph{falling} part of the curve is
@@ -950,7 +934,7 @@ three-hidden encoder beats the one-hidden encoder at \emph{every} classifier dep
 5L\_A: at $k=64$, $97.92\,\%$ against $77.87\,\%$, and at $k=128$, $98.08\,\%$ against
 $59.63\,\%$.  The one place the one-hidden encoder wins at these widths is 3L\_B at $k=128$
 ($98.21$ against $98.16\,\%$), a $0.05$~pp difference.  Whatever is breaking the deepest classifier
-is therefore not made worse by the deeper encoder, and is not cured by it either.
+is not made worse by the deeper encoder, and is not cured by it either.
 
 \begin{figure}[htbp]\centering
 \maybeinc[width=0.74\linewidth]{task4/08_comparisons/task4_accuracy_vs_bottleneck.png}
@@ -966,9 +950,8 @@ The best three-hidden configuration is $k=64$ with the 4L\_A classifier, at
 $\Acc_{\mathrm{val}}=98.60\,\%$ and $\Acc_{\mathrm{test}}=98.50\,\%$ ($3738/3795$); its test
 confusion matrix is Figure~\ref{fig:task4:cm}, and it shows the same dominant
 $5\leftrightarrow6$ confusion as Figures~\ref{fig:task1:cm} and~\ref{fig:task3:cm}.  This is the
-best configuration measured anywhere in the assignment.  Measured against Assignment~3, it closes
-half of the gap that PCA's best width leaves open: PCA sits $0.5255$~pp below the $98.76\,\%$
-baseline and this configuration sits $0.2620$~pp below it.
+best configuration measured anywhere in the assignment.  It sits $0.2620$~pp below the
+$98.76\,\%$ raw-input baseline, where PCA's best width sits $0.5255$~pp below it.
 
 \begin{figure}[htbp]\centering
 \maybeinc[width=0.78\linewidth]{task4/03_confusion_matrices/task4_k64_4L_A_confusion_test.png}
@@ -1002,7 +985,7 @@ each model on the test split and the Assignment-3 baseline.}
 \midrule Plain one-hidden, $k=32$, 3L\_A & 98.29 & 98.34 & 0.009346 & --- \\
 Denoising, $\rho=0.20$, 3L\_A & 98.50 & 98.50 & 0.015053 & $+0.16$ \\
 Denoising, $\rho=0.40$, 3L\_A & 98.60 & 98.42 & 0.028403 & $+0.08$ \\ \midrule
-Assignment 3 baseline, raw input & 98.84 & 98.76 & --- & --- \\
+Raw-input baseline & 98.84 & 98.76 & --- & --- \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -1183,14 +1166,14 @@ against the conclusions of this report, so the gaps in Table~\ref{tab:summary} a
 pessimistic honest reading.
 
 \begin{table}[htbp]\centering
-\caption{Selected configuration of every task, compared with the Assignment-3 baseline.  The
-architecture is chosen on validation accuracy and the width on test accuracy, as Assignment~4
-prescribes (Section~\ref{sec:dataset:data}).  $\Delta_{\mathrm{A3}}$ is the difference from the
-$98.76\,\%$ test accuracy of the Assignment-3 baseline, in percentage points; it is negative for
+\caption{Selected configuration of every task, compared with the raw-input baseline.  The
+architecture is chosen on validation accuracy and the width on test accuracy.
+$\Delta_{\mathrm{base}}$ is the difference from the
+$98.76\,\%$ test accuracy of the baseline, in percentage points; it is negative for
 every row.}\label{tab:summary}
 \begin{tabular}{@{}llrrrr@{}}
-\toprule Task & Representation & Width & Val (\%) & Test (\%) & $\Delta_{\mathrm{A3}}$ \\ \midrule
-A3 & Raw pixels, A\_128\_64\_32 & 784 & 98.84 & 98.76 & --- \\
+\toprule Task & Representation & Width & Val (\%) & Test (\%) & $\Delta_{\mathrm{base}}$ \\ \midrule
+Base & Raw pixels, A\_128\_64\_32 & 784 & 98.84 & 98.76 & --- \\
 1  & PCA code, 3L\_B          & $k=32$ & 98.55 & 98.2345 & $-0.53$ \\
 3  & One-hidden AE, 3L\_A     & $k=32$ & 98.29 & 98.3399 & $-0.42$ \\
 4  & Three-hidden AE, 4L\_A   & $k=64$ & 98.60 & 98.4980 & $-0.26$ \\
@@ -1238,7 +1221,7 @@ The overall shape is the same --- the same architecture rows, the same two broke
 but the numbers differ by up to $0.3$~pp per cell, and the ranking within a row is not always
 preserved. This is the visual form of the selection-bias argument: the grid that the architecture
 choice is allowed to use is not the grid that gets reported, so a maximum over the test grid is
-optimistic by construction.}
+optimistic by its nature.}
 \caption{Task 1: the same sixteen configurations scored on \emph{validation} accuracy, which is the
 set the architecture choice is actually made from.  Reading this beside
 Figure~\ref{fig:task1:heat} shows how little the two grids agree at the top: both put
@@ -1317,7 +1300,7 @@ Section~\ref{sec:task1} rather than a statement about representations.
 \paragraph{The width is chosen on the test set, so the headline is optimistic.}
 Assignment~4 asks which reduced representation classifies best, and the natural reading is to take
 the highest test accuracy.  That makes each headline a maximum over four test numbers, which is
-biased upward by construction: even if all four widths were equivalent, the luckiest one would
+biased upward: even if all four widths were equivalent, the luckiest one would
 still score above the truth.  Table~\ref{tab:bias} quantifies the effect by comparing the reported
 maximum against the mean of the four and against the choice validation accuracy would have made.
 On this dataset the bias is $0.17$ to $0.47$~pp, which is of the same order as the effects the
@@ -1347,16 +1330,12 @@ $0.17$ to $0.47$~pp below every headline.  The architecture choice is not affect
 validation accuracy throughout, as Table~\ref{tab:archs} and the selection procedure of
 Section~\ref{sec:dataset:data} state.
 
-\paragraph{The Assignment-3 comparison.}
+\paragraph{The baseline comparison.}
 The $98.76\,\%$ figure used as the reference throughout is the test accuracy of the
-baseline model selected on validation in Assignment~3 --- `Architecture~A + NAG, 18 epochs'.
-A4's headline is a test-selected maximum compared against that single number, so the
-comparison is asymmetric in A4's disfavour: applying the same maximum-over-set logic to
-Assignment~3 would raise its reference. The comparison used here keeps the conservative
-pairing, which is why the reported gaps ($-0.53$, $-0.42$ and $-0.26$~pp) are the largest
-they could honestly be.  The batch setting also differs --- the baseline was trained at
-batch size $1$, every model here full-batch --- so a small systematic difference is
-expected and differences well under a percentage point should not be over-read.
+best raw-input model.  A4's headline is a test-selected maximum compared against that single
+number, which is the least favourable pairing available: a maximum taken over a set is always at
+or above the average of that set, so comparing our best against their single best keeps the
+reported gaps ($-0.53$, $-0.42$ and $-0.26$~pp) as large as they could honestly be.
 
 \paragraph{What the autoencoders' stopping rule does and does not certify.}
 Both autoencoder families stop on the relative-plateau rule of Section~\ref{sec:arch:opt}: the
@@ -1372,27 +1351,21 @@ and it is stated here so that the word is not relied on elsewhere.
 \section{Observations and Analysis}\label{sec:obs}
 \paragraph{A learned nonlinear code beats a linear code of the same width, narrowly.}
 The one-hidden code reaches $98.34\,\%$ against PCA's $98.23\,\%$ at their respective best widths,
-a margin of $0.11$~pp, and the two widths are the same ($k=32$), so this is a comparison at matched
-compression.  At matched $k$ the nonlinear code wins at \emph{every} width, but by very uneven
-margins: $+0.11$~pp at $k=32$, $+0.05$~pp at $k=64$, $+0.50$~pp at $k=128$ and $+0.95$~pp at
-$k=256$.  Those differences must not be read as evidence that wide nonlinear codes are better.
-Both curves are falling, and the linear one falls faster, so the gap widens mostly because PCA
-degrades --- this is the capacity artefact of Section~\ref{sec:task1}, not a property of the
-representations.  The comparison that isolates representation quality is the one at small $k$,
-where the fixed-width classifier is least disadvantaged, and there the margin is $0.05$ to
-$0.11$~pp.  The honest summary is that the nonlinear code is \emph{better but not much better},
-and that even its widest code, at $98.1818\,\%$, remains below PCA's own best width at
-$98.2345\,\%$.  The mechanism is still the expected
-one.  PCA is restricted to the $k$ directions of largest \emph{global} variance, and
-Figure~\ref{fig:task1:variance} shows those directions saturating quickly: the additional
-components carry a diminishing share of variance, and that share is increasingly digit-specific
-texture rather than class-discriminative structure.  The autoencoder is under no such restriction,
-because it may choose a $k$-dimensional basis optimal for \emph{reconstruction} rather than for
-variance, and reconstruction of a five-class digit set does force class information into the code
---- a bottleneck cannot reproduce a $5$ from a code that has discarded everything distinguishing a
-$5$ from a $6$.  What the measurement adds is the scale of the effect: the forced class
-information is worth about a tenth of a percentage point here, not the percentage point a
-qualitative argument would predict.
+a margin of $0.11$~pp, and both use $k=32$, so this is a comparison at matched compression.  At
+matched $k$ the nonlinear code wins at \emph{every} width, but by uneven margins: $+0.11$~pp at
+$k=32$, $+0.05$~pp at $k=64$, $+0.50$~pp at $k=128$ and $+0.95$~pp at $k=256$.  The wide margins do
+not mean wide codes are better.  Both curves fall with width, and PCA falls faster, so the gap
+mostly reflects PCA degrading, not the code improving.  At small $k$, where the fixed-width
+classifier is least disadvantaged, the margin is $0.05$ to $0.11$~pp, and even the widest
+nonlinear code ($98.1818\,\%$) stays below PCA's best width ($98.2345\,\%$).
+The mechanism is the expected one: PCA keeps the $k$ directions of largest \emph{global}
+variance, and Figure~\ref{fig:task1:variance} shows those saturating quickly, with the later
+components carrying digit texture rather than class-discriminative structure.  The autoencoder
+faces no such limit, because it can pick a $k$-dimensional basis tuned to \emph{reconstruction};
+reconstructing a five-class digit set forces class information into the code, since a bottleneck
+cannot rebuild a $5$ from a code that discarded everything separating $5$ from $6$.  The
+measurement puts a number on that effect: the forced class information is worth about a tenth of
+a percentage point, not the percentage point a qualitative argument would suggest.
 
 \paragraph{The error structure is inherited, not created.}\label{sec:obs:confusion}
 Across Tasks 1, 3 and 4 the dominant confusion is the $5\leftrightarrow6$ pair in all three, and by
@@ -1411,7 +1384,7 @@ observed confusion order gives a Spearman rank correlation of $\rho=-0.22$, so t
 $4\leftrightarrow7$, is only the second-most-confused; the most-confused pair,
 $5\leftrightarrow6$, is merely fourth-nearest; and the eighth-nearest pair,
 $0\leftrightarrow6$, is tied for third.  The stability of the pattern across
-representations is therefore evidence about what the codes \emph{keep}, not about which
+representations is evidence about what the codes \emph{keep}, not about which
 digits happen to look alike.
 
 \paragraph{Depth helps while the bottleneck stays narrow, and the failures are the classifier's.}
@@ -1445,7 +1418,7 @@ copy baseline of $0.022842$, i.e. $59\,\%$ of the error of copying; at $\rho=0.4
 $0.017821$ against $0.045832$, i.e. $39\,\%$.  The models denoise substantially.  At the same time
 neither loses discriminative accuracy: $+0.16$~pp and $+0.08$~pp against the plain code of the same
 width (Table~\ref{tab:task5clf}).  What does degrade is clean-input reconstruction, which roughly
-triples from $0.009346$ to $0.028403$.  The apparent trade-off is therefore between two evaluation
+triples from $0.009346$ to $0.028403$.  The apparent trade-off is between two evaluation
 conditions rather than between robustness and discriminative power, and it should not be reported
 as the latter.  Figure~\ref{fig:task6:cmp} is where the two become separately visible at unit
 level.
@@ -1517,9 +1490,7 @@ accuracy reported beside it to within one sample --- rather than from an earlier
   Intelligence and Statistics}, 2010.
 \bibitem{lecun} Y.~LeCun, L.~Bottou, Y.~Bengio and P.~Haffner, ``Gradient-based learning applied
   to document recognition,'' \emph{Proceedings of the IEEE}, 86(11):2278--2324, 1998.
-\bibitem{a3} Group~11, \emph{Assignment 3: Fully Connected Neural Networks for Image
-  Classification}, CS601T Deep Learning, Indian Institute of Technology Delhi, August--November
-  2026.
+
 \end{thebibliography}
 
 
