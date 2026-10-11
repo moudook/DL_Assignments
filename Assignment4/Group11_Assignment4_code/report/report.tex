@@ -348,21 +348,20 @@ the ranking of eigenvalues is a discrete event, so the top-$k$ choice is determi
 \begin{align}
 \mathbf{x}_i &= \operatorname{vec}(\mathbf{g}_i)\in\R^{D},\qquad D=28\times28=784,
   \qquad i=1,\ldots,N, \label{eq:flatten}\\
-\boldsymbol{\mu} &= \frac{1}{N}\sum_{i=1}^{N}\mathbf{x}_i\in\R^{D},
-  \qquad \boldsymbol{\mu}=\boldsymbol{\mu}(\mathcal{S}_{\mathrm{tr}}), \label{eq:mean}\\
-\bar{\mathbf{x}}_i &= \mathbf{x}_i-\boldsymbol{\mu}
+\bar{\mathbf{x}}_i &= \mathbf{x}_i-\boldsymbol{\mu},\qquad
+  \boldsymbol{\mu}=\frac{1}{N}\sum_{i=1}^{N}\mathbf{x}_i,\qquad
+  \boldsymbol{\mu}=\boldsymbol{\mu}(\mathcal{S}_{\mathrm{tr}})
   \qquad\text{(the training mean, for every split)}, \label{eq:center}\\
-\boldsymbol{\Sigma} &= \frac{1}{N}\sum_{i=1}^{N}\bar{\mathbf{x}}_i\bar{\mathbf{x}}_i^{\top}
-  \in\R^{D\times D},\qquad \boldsymbol{\Sigma}=\boldsymbol{\Sigma}^{\top}\succeq0, \label{eq:cov}\\
-\boldsymbol{\Sigma}\mathbf{u}_j &= \lambda_j\mathbf{u}_j,\qquad
-  \lambda_1\ge\cdots\ge\lambda_D\ge0,\qquad
-  \langle\mathbf{u}_j,\mathbf{u}_{j'}\rangle=\delta_{jj'}, \label{eq:eig}\\
-\mathbf{U}_k &= [\mathbf{u}_1\;\mathbf{u}_2\;\cdots\;\mathbf{u}_k]\in\R^{D\times k},
-  \qquad \mathbf{z}_i=\mathbf{U}_k^{\top}\bar{\mathbf{x}}_i\in\R^{k}, \label{eq:proj}\\
+\mathbf{z}_i &= \mathbf{U}_k^{\top}\bar{\mathbf{x}}_i\in\R^{k},\qquad
+  \mathbf{U}_k=[\mathbf{u}_1\;\cdots\;\mathbf{u}_k],\qquad
+  \boldsymbol{\Sigma}\mathbf{u}_j=\lambda_j\mathbf{u}_j,\quad \lambda_1\ge\cdots\ge\lambda_D\ge0,
+  \label{eq:proj}\\
 \nu(k) &= \frac{\sum_{j=1}^{k}\lambda_j}{\sum_{j=1}^{D}\lambda_j}\in[0,1]
   \qquad\text{(non-decreasing in $k$)}. \label{eq:varratio}
 \end{align}
-where $\mathbf{g}_i\in[0,1]^{28\times28}$ is the greyscale image of Eq.~\eqref{eq:flatten}.
+where $\mathbf{g}_i\in[0,1]^{28\times28}$ is the greyscale image of Eq.~\eqref{eq:flatten} and
+$\boldsymbol{\Sigma}$ is the $D\times D$ training covariance of $\bar{\mathbf{x}}_i$, so
+$\mathbf{U}_k$ holds the top-$k$ eigenvectors.
 
 \subsection{Autoencoders (Tasks 2, 3 and 4)}\label{sec:arch:ae}
 Two encoder/decoder families are trained.  In both, the bottleneck layer is \emph{linear} by
@@ -379,25 +378,22 @@ The bottleneck is the only hidden layer, so it is linear, and the decoder is a s
 output layer, giving Eq.~\eqref{eq:ae1full}.  The parameter count is $2Dk+D+k$.
 \begin{align}
 \mathbf{z} &= \phi(\mathbf{x})=\mathbf{W}_e\mathbf{x}+\mathbf{b}_e\in\R^{k},
-  \qquad \theta_e=\{\mathbf{W}_e\in\R^{k\times D},\mathbf{b}_e\}, \label{eq:ae1enc}\\
+\qquad \theta_e=\{\mathbf{W}_e\in\R^{k\times D},\mathbf{b}_e\}, \label{eq:ae1enc}\\
 \hat{\mathbf{x}} &= (\psi\circ\phi)(\mathbf{x})=\sigma\bigl(\mathbf{W}_d
-  (\mathbf{W}_e\mathbf{x}+\mathbf{b}_e)+\mathbf{b}_d\bigr)\in\R^{D}, \label{eq:ae1full}\\
-\psi(\mathbf{z}) &= \sigma(\mathbf{W}_d\mathbf{z}+\mathbf{b}_d),\qquad
-  \theta_d=\{\mathbf{W}_d\in\R^{D\times k},\mathbf{b}_d\}. \label{eq:ae1dec}
+(\mathbf{W}_e\mathbf{x}+\mathbf{b}_e)+\mathbf{b}_d\bigr)\in\R^{D}, \label{eq:ae1full}
 \end{align}
+with $\psi(\mathbf{z})=\sigma(\mathbf{W}_d\mathbf{z}+\mathbf{b}_d)$ and
+$\theta_d=\{\mathbf{W}_d\in\R^{D\times k},\mathbf{b}_d\}$.
 
 \paragraph{Three-hidden family ($784\rightarrow400\rightarrow k\rightarrow400\rightarrow784$).}
 Two sigmoid layers of width $400$ bracket the same linear bottleneck.  The $400$-wide layers are
 the assignment's own prescription, not a tuned width.  The parameter count is
 $628\,784+801k$, dominated by the two $784\leftrightarrow400$ matrices.
-\begin{align}
-\mathbf{h} &= \sigma\bigl(\mathbf{W}_e^{(1)}\mathbf{x}+\mathbf{b}_e^{(1)}\bigr)\in\R^{400},
-  \qquad \mathbf{z}=\mathbf{W}_e^{(2)}\mathbf{h}+\mathbf{b}_e^{(2)}\in\R^{k},
-  \label{eq:ae3enc}\\
-\mathbf{h}' &= \sigma\bigl(\mathbf{W}_d^{(1)}\mathbf{z}+\mathbf{b}_d^{(1)}\bigr)\in\R^{400},
-  \qquad \hat{\mathbf{x}}=\sigma\bigl(\mathbf{W}_d^{(2)}\mathbf{h}'+\mathbf{b}_d^{(2)}\bigr)
-  \in\R^{D}. \label{eq:ae3dec}
-\end{align}
+Encoder: $\mathbf{h}=\sigma(\mathbf{W}_e^{(1)}\mathbf{x}+\mathbf{b}_e^{(1)})$ in $\R^{400}$, then
+$\mathbf{z}=\mathbf{W}_e^{(2)}\mathbf{h}+\mathbf{b}_e^{(2)}$ in $\R^{k}$, the linear bottleneck.
+Decoder mirrors it: $\mathbf{h}'=\sigma(\mathbf{W}_d^{(1)}\mathbf{z}+\mathbf{b}_d^{(1)})$ in
+$\R^{400}$, then $\hat{\mathbf{x}}=\sigma(\mathbf{W}_d^{(2)}\mathbf{h}'+\mathbf{b}_d^{(2)})$ in
+$\R^{D}$.  Only the bottleneck is linear; every other layer is sigmoid.
 
 \begin{table}[htbp]\centering
 \caption{Exact trainable-parameter counts of the two autoencoder families.  The three-hidden
@@ -442,6 +438,9 @@ same width.
 \mathcal{L}_{\mathrm{DAE}}(\theta) &= \frac{1}{N\,D}\sum_{i=1}^{N}\sum_{j=1}^{D}
   \Bigl(x_{ij}-\bigl[\psi(\phi(\tilde{\mathbf{x}}_i))\bigr]_{j}\Bigr)^{2}. \label{eq:dae}
 \end{align}
+Each pixel survives with probability $1-\rho$ and is set to zero otherwise, so $\rho$ is the
+fraction of pixels destroyed; the mask is drawn independently per image, so each sample gets its
+own pattern.
 
 \subsection{Weight visualisation (Task 6)}\label{sec:arch:wv}
 For each unit $j$ of a one-hidden encoder we visualise two objects: the training image that
@@ -461,19 +460,11 @@ All training uses Adam with $\beta_1=0.9$, $\beta_2=0.999$ and $\epsilon_{\mathr
 Assignment 4 mandates Adam for the autoencoders; the same optimiser is used for every classifier,
 so the four tasks differ in representation only, never in optimiser.  Gradients are taken over the
 full training batch throughout.
-\begin{align}
-\bar{\mathbf{g}}_t &= \beta_1\bar{\mathbf{g}}_{t-1}+(1-\beta_1)\mathbf{g}_t,
-  \qquad \overline{\mathbf{g}^2}_t=\beta_2\overline{\mathbf{g}^2}_{t-1}+(1-\beta_2)\mathbf{g}_t^{2},
-  \label{eq:adam}\\[2pt]
-\hat{\mathbf{g}}_t &= \frac{\bar{\mathbf{g}}_t}{1-\beta_1^{t}},\qquad
-  \widehat{\mathbf{g}^2}_t=\frac{\overline{\mathbf{g}^2}_t}{1-\beta_2^{t}},\qquad
-  \theta\leftarrow\theta-\eta\frac{\hat{\mathbf{g}}_t}{\sqrt{\widehat{\mathbf{g}^2}_t}
-  +\epsilon_{\mathrm{adam}}},
-\end{align}
-where $\mathbf{g}_t=\nabla_{\theta}\mathcal{L}$ is the gradient of the objective of the run at
-step $t$.  Learning rates follow the values already used on this dataset
-($\eta_{\mathrm{clf}}=0.01$, $\eta_{\mathrm{AE}}=0.001$); both were validated by a pilot on this
-dataset, because full-batch descent at $\eta=0.001$ was measured to sit at exactly $20\,\%$
+with the usual bias-corrected step $\theta\leftarrow\theta-\eta\hat{\mathbf{g}}_t/
+(\sqrt{\widehat{\mathbf{g}^2}_t}+\epsilon_{\mathrm{adam}})$ on the gradient
+$\mathbf{g}_t=\nabla_\theta\mathcal{L}$.  Learning rates follow the values already used on this
+dataset ($\eta_{\mathrm{clf}}=0.01$, $\eta_{\mathrm{AE}}=0.001$); both were validated by a pilot on
+this dataset, because full-batch descent at $\eta=0.001$ was measured to sit at exactly $20\,\%$
 validation accuracy --- chance --- which this assignment must not reproduce.
 
 \paragraph{Stopping criterion.}
