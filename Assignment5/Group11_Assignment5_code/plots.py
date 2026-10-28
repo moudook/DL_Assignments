@@ -4,9 +4,11 @@ which lints it before writing: matplotlib warnings are errors, text must lie
 inside the canvas, text must not overlap other text or another axes, and the
 figure must not be blank.
 
-Colormaps carry meaning and are the same everywhere:
-  signed values (filters, un-activated maps, gradients): RdBu_r, symmetric about 0
-  non-negative values (post-ReLU maps):                 viridis from 0
+Colormaps follow the lecture notes (slides 107-110, 125, 141-144) and are the
+same everywhere:
+  filters (weights):  gray, symmetric about 0 (mid-grey = 0, white = most positive)
+  feature maps:       viridis (post-ReLU from 0; the un-activated A1 map min..max)
+  gradients:          on a mid-grey background (part_b2_vgg.to_display)
   MNIST images: gray;  Grad-CAM overlay: jet, alpha 0.4
 """
 
@@ -26,7 +28,7 @@ from matplotlib.text import Text  # noqa: E402
 from protocol import EXPLODE  # noqa: E402
 
 DPI = 200
-SIGNED = "RdBu_r"
+SIGNED = "gray"
 POSITIVE = "viridis"
 BOX_COLOURS = ["#e6194b", "#3cb44b", "#ffe119", "#4363d8", "#f58231",
                "#911eb4", "#42d4f4", "#f032e6"]
@@ -171,9 +173,9 @@ def show_signed(ax, m, lim=None, title=None):
     return im
 
 
-def show_positive(ax, m, vmax=None, title=None):
+def show_positive(ax, m, vmax=None, title=None, vmin=0.0):
     vmax = vmax if vmax is not None else float(m.max()) or 1.0
-    im = ax.imshow(m, cmap=POSITIVE, vmin=0, vmax=vmax)
+    im = ax.imshow(m, cmap=POSITIVE, vmin=vmin, vmax=vmax)
     clean_ax(ax)
     if title:
         ax.set_title(title)
@@ -181,10 +183,11 @@ def show_positive(ax, m, vmax=None, title=None):
 
 
 def annotate_cells(ax, m, fmt="{:.2f}", lim=None, fontsize=None):
-    """Write each value in its cell; text colour flips on dark cells."""
+    """Write each value in its cell; text colour flips on dark cells (the
+    symmetric gray scale: -lim black, 0 mid-grey, +lim white)."""
     lim = lim if lim is not None else float(np.abs(m).max()) or 1.0
     for (i, j), v in np.ndenumerate(m):
-        dark = abs(v) / lim > 0.6
+        dark = (v / lim + 1) / 2 < 0.45
         ax.text(j, i, fmt.format(v), ha="center", va="center",
                 fontsize=fontsize or 6, color="white" if dark else "black")
 
@@ -248,7 +251,7 @@ def image_maps_grid(images, row_labels, columns, title, path, panel=1.35, note=N
 
 
 def filter_row(filters, titles, title, path, annotate=True, lim=None, panel=1.9):
-    """2-D filters side by side, signed colours, values printed in the cells."""
+    """2-D filters side by side, gray scale symmetric about 0, values printed in the cells."""
     filters = [np.asarray(f) for f in filters]
     lim = lim if lim is not None else max(float(np.abs(f).max()) for f in filters)
     fig, axes = new_fig(1, len(filters), panel=panel, extra_h=0.7)

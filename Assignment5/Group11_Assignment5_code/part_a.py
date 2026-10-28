@@ -53,12 +53,14 @@ def a1(m, sel, out):
 
     plots.filter_row([k], ["5x5 filter"], "A1: Kaiming-initialised filter "
                      "(N(0, 2/25))", out / "A1_filter", panel=3.2)
-    lim = max(float(np.abs(fm).max()) for fm in maps)
+    # feature maps in viridis as in the notes; signed (no activation), so the
+    # shared scale runs min..max and zero sits part-way up
+    lo, hi = min(float(fm.min()) for fm in maps), max(float(fm.max()) for fm in maps)
     fig, axes = plots.new_fig(len(imgs), 2, panel=2.0, extra_w=0.9, extra_h=0.6)
     for r, (im, fm, lab) in enumerate(zip(imgs, maps, labels)):
         plots.show_image(axes[r, 0], im)
         axes[r, 0].set_ylabel(lab)
-        h = plots.show_signed(axes[r, 1], fm, lim=lim)
+        h = plots.show_positive(axes[r, 1], fm, vmin=lo, vmax=hi)
     axes[0, 0].set_title("input 28x28")
     axes[0, 1].set_title("feature map 24x24")
     fig.colorbar(h, ax=axes[:, 1].tolist(), shrink=0.5, label="filter response (no activation)")

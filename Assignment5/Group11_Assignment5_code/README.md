@@ -26,6 +26,7 @@ python run.py all --quick      whole pipeline on tiny subsets (~1 min, numbers m
 python run.py all              the real run -> out/
 python run.py partA | partB1 | partB2   one part
 python run.py check            manifest check, summary.json, contact sheets
+python export_figures.py       copy the figures report.tex uses into ../report/figures/
 ```
 
 Each part runs in its own process; TensorFlow (Part B Q2 only) and PyTorch
