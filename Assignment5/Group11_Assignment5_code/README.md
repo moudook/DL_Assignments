@@ -27,6 +27,7 @@ python run.py all              the real run -> out/
 python run.py partA | partB1 | partB2   one part
 python run.py check            manifest check, summary.json, contact sheets
 python export_figures.py       copy the figures report.tex uses into ../report/figures/
+python seeds_b1.py             B1 rerun over 5 seeds (additional experiment) -> out/B1_seeds/
 ```
 
 Each part runs in its own process; TensorFlow (Part B Q2 only) and PyTorch
@@ -83,5 +84,7 @@ evaluate.py       accuracy, confusion matrix, per-class recall
 plots.py          figures + automatic layout check on every figure
 results.py        JSON output
 part_a.py, part_b1.py, part_b2_vgg.py   the three parts
+seeds_b1.py       additional experiment: B1 protocol rerun over 5 seeds
+export_figures.py copies the report's figures from out/ into ../report/figures/
 smoke_test.py, smoke_test_tf.py         correctness checks
 ```

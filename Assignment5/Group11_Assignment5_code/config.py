@@ -14,13 +14,13 @@ OUT_DIR = CODE_DIR / "out"
 CACHE_DIR = OUT_DIR / "cache"
 
 SEED = 11
-# Every trained model (A3, Arch-1/2/3, VGG19 head) runs once per seed. One
-# seed by default; add more (e.g. [11, 12, 13]) and results become mean +- std
-# with selection on the mean. SEEDS[0] is the designated seed - fixed in
-# advance, never "the best one" - and supplies every figure, the confusion
-# matrices, and the A2 filters A3b is compared against.
-SEEDS = [11]
-assert SEEDS[0] == SEED
+# Every reported model, figure and confusion matrix comes from SEED, fixed in
+# advance. seeds_b1.py reruns the full B1 protocol for each of SEEDS_B1 to
+# measure how much the architecture ranking depends on the seed (initial
+# weights and presentation order); SEEDS_B1[0] must be SEED so that run
+# reproduces the main B1 results.
+SEEDS_B1 = [11, 12, 13, 14, 15]
+assert SEEDS_B1[0] == SEED
 
 # ---------------------------------------------------------------- datasets
 # Both datasets ship as folders named "Group_11", so the resolver identifies
