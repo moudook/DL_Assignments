@@ -91,10 +91,10 @@ backpropagation and Grad-CAM.
 
 \subsection{Data}
 \begin{table}[H]\centering\small
-\begin{tabular}{@{}lllrrr@{}}\toprule
-dataset & classes & image & train & validation & test \\ \midrule
+\begin{tabular}{@{}l>{\raggedright\arraybackslash}p{3.6cm}lrrr@{}}\toprule
+dataset & classes & image & train & val & test \\ \midrule
 MNIST subset & 0, 4, 5, 6, 7 & $28\times28$ grey & 11385 & 3795 & 3795 \\
-Caltech-101 subset & bonsai, buddha, car\_side, scorpion, starfish & resized to $224\times224\times3$
+Caltech-101 subset & bonsai, buddha, car\_side, scorpion, starfish & $224\times224\times3$ (resized)
   & 250 & 50 & 100 \\ \bottomrule
 \end{tabular}
 \caption{Group 11 datasets.  Both are balanced across classes (MNIST 2277/759/759 per class,
@@ -103,8 +103,9 @@ by content hash).}\label{tab:data}
 \end{table}
 MNIST pixels are scaled to $[0,1]$.  Caltech images vary in size (124 to 300 pixels per side) and
 are resized to $224\times224$ without preserving aspect ratio, as the sheet asks.  Of the 400
-Caltech images, all 80 car\_side images are greyscale, as are 4 buddha and 3 starfish images; every
-greyscale image is replicated to three channels.  Because car\_side is the only class that is
+Caltech images, all 80 car\_side images are greyscale, as are 4 buddha and 4 starfish images (one
+starfish file is stored as RGB but has three identical channels); every greyscale image is
+replicated to three channels.  Because car\_side is the only class that is
 entirely greyscale, a network can partly recognise it from the absence of colour; we return to this
 in Section~\ref{sec:limits}.  For the networks trained from scratch the Caltech pixels are
 normalised per channel with the mean and standard deviation of the training split only.  VGG19
@@ -124,8 +125,8 @@ W_2 = \left\lfloor \frac{W_1 - F + 2P}{S} \right\rfloor + 1 ,
 with the depth equal to the number of filters.  The floor matters in Part~B: $(224-11)/4 = 53.25$,
 so the first Caltech layer is $54\times54$ and its last input column is never covered by a filter.
 Every layer size reported below was predicted with Eq.~\eqref{eq:size} and asserted against the
-tensor the code actually produced.  Convolution kernels are Kaiming-normal initialised
-($\mathcal N(0, 2/\text{fan-in})$), fully connected layers Xavier-normal, biases zero.  The output
+tensor the code actually produced.  Convolution kernels are Kaiming-normal initialised~\cite{he}
+($\mathcal N(0, 2/\text{fan-in})$), fully connected layers Xavier-normal~\cite{glorot}, biases zero.  The output
 layer is a 5-way softmax trained with cross-entropy.
 
 \subsection{Training protocol}\label{sec:protocol}
@@ -153,7 +154,7 @@ stopping rule or the learning rate.  One protocol is used for every trained mode
 Every run of every grid is reported (Tables~\ref{tab:a3grid}, \ref{tab:b1grid} and \ref{tab:b2grid}).
 
 \subsection{Tracing a neuron back to its input patch}\label{sec:rf}
-The patch that ``causes a neuron to fire'' is found as in the lecture notes: starting from the
+The patch that ``causes a neuron to fire''~\cite{zeiler} is found as in the lecture notes: starting from the
 neuron, step back one layer at a time, widening the window by that layer's kernel and stride, until
 the input is reached.  For a layer with kernel $k$, stride $s$ and padding $p$, an output window of
 rows $[r_0, r_1]$ comes from input rows
@@ -193,11 +194,13 @@ No activation is applied, so the maps are signed.
 \begin{minipage}[c]{0.36\linewidth}\centering\includegraphics[width=\linewidth]{A/A1_filter.png}\end{minipage}\hfill
 \begin{minipage}[c]{0.40\linewidth}\centering\includegraphics[width=\linewidth]{A/A1_feature_maps.png}\end{minipage}
 \infer{A random filter is already a feature detector: it responds with opposite signs on the two
-sides of a stroke, so each map traces the digit as a pair of red and blue bands, with near-zero
-response on the empty background.  Nothing here is learned: the structure comes from the images,
+sides of a stroke, so each map traces the digit as a pair of bright (yellow) and dark (purple)
+bands, with near-zero response (teal) on the empty background.  Nothing here is learned: the structure comes from the images,
 and the filter only decides which local contrast pattern each output value measures.}
 \caption{A1.  Left: the filter.  Right: the five images and their $24\times24$ feature maps
-(one shared colour scale, red positive, blue negative).}\label{fig:a1}
+(one shared viridis scale, yellow most positive, purple most negative).  As in the notes, filters
+are drawn in grey scale (white most positive, black most negative, mid-grey zero) and feature maps
+in viridis.}\label{fig:a1}
 \end{figure}
 
 \subsection{A2 -- A convolution--ReLU--pool class, stacked twice}
@@ -227,31 +230,35 @@ $3\times3\times3$ filters.}\label{fig:a2filters}
 \end{figure}
 
 \begin{figure}[H]\centering
-\includegraphics[width=0.85\linewidth]{A/A2_maps_l1.png}\\[4pt]
-\includegraphics[width=0.85\linewidth]{A/A2_maps_l2.png}
+\includegraphics[width=0.74\linewidth]{A/A2_maps_l1.png}\\[4pt]
+\includegraphics[width=0.74\linewidth]{A/A2_maps_l2.png}
 \infer{After ReLU only one sign of each filter's response survives, so each layer-1 map keeps one
 side of the strokes; pooling halves the resolution but keeps the shape legible at $12\times12$.  At
-layer~2 the $8\times8$ and $4\times4$ maps no longer look like the digit: each value now mixes six
-layer-1 maps over a wider area.}
+layer~2 the maps no longer look like the digit: each $8\times8$ value is computed from a
+$14\times14$ input patch and mixes all six layer-1 maps with random weights.  Untrained, the
+responses are spread out: f1 and f6 are non-zero almost everywhere (94\,\% and 92\,\% of values),
+while f11 is almost always cut off by ReLU (8\,\%).  After training
+(Figure~\ref{fig:a3bmaps}), the same filters fire only on specific parts of the digit, and the
+share of non-zero layer-2 values falls from 53\,\% to 19\,\%.}
 \caption{A2 feature maps of the chosen filters, after conv+ReLU and after pooling, for the five
 images.  The colour scale is shared down each column, so equal colour means equal activation for a
 filter across images.}\label{fig:a2maps}
 \end{figure}
 
 \subsection{A3 -- The full CNN}
-The network is input $28\times28$ $\rightarrow$ 6@$24\times24$ $\rightarrow$ pool 6@$12\times12$
+The network, a LeNet-style design~\cite{lecun}, is input $28\times28$ $\rightarrow$ 6@$24\times24$ $\rightarrow$ pool 6@$12\times12$
 $\rightarrow$ 16@$8\times8$ $\rightarrow$ pool 16@$4\times4$ $\rightarrow$ flatten 256
 $\rightarrow$ 64 (ReLU) $\rightarrow$ 5 (softmax), with 19,345 parameters.  Its two
 convolution layers start from exactly the A2 weights, so A3b compares the same filters before and
 after training.  Table~\ref{tab:a3grid} gives the learning-rate grid.
 
-\begin{table}[H]\centering\small\begin{tabular}{@{}lrrrrrl@{}}\toprule
-lr & best ep. & stop ep. & best val loss & val acc (\%) & train acc (\%) & flags \\ \midrule
-0.001 & 40 & 55 & 0.0292 & 98.95 & 99.9 & -- \\
-0.003 & 20 & 35 & 0.0281 & 99.03 & 100.0 & -- \\
-0.01 & 11 & 26 & 0.0214 & 99.21 & 100.0 & -- \\
-\rowcolor{selrow}0.03 & 6 & 21 & 0.0190 & 99.34 & 99.9 & -- \\
-0.1 & 1 & 16 & 0.6278 & 85.67 & 86.0 & collapsed \\
+\begin{table}[H]\centering\small\begin{tabular}{@{}lrrrrr@{}}\toprule
+lr & best ep. & stop ep. & best val loss & val acc (\%) & train acc (\%) \\ \midrule
+0.001 & 40 & 55 & 0.0292 & 98.95 & 99.9 \\
+0.003 & 20 & 35 & 0.0281 & 99.03 & 100.0 \\
+0.01 & 11 & 26 & 0.0214 & 99.21 & 100.0 \\
+\rowcolor{selrow}0.03 & 6 & 21 & 0.0190 & 99.34 & 99.9 \\
+0.1 & 1 & 16 & 0.6278 & 85.67 & 86.0 \\
 \bottomrule\end{tabular}
 \caption{A3 learning-rate grid (Section~\ref{sec:protocol}).  The shaded row is selected.  Accuracies
 are at the restored best epoch.}\label{tab:a3grid}
@@ -285,10 +292,11 @@ first convolution layer, which has 6, so all 6 are shown, together with 10 of th
 filters (including the three A2 positions).
 
 \begin{figure}[H]\centering
-\includegraphics[width=0.95\linewidth]{A/A3b_filters_l1.png}\\[2pt]
-\includegraphics[width=0.75\linewidth]{A/A3b_filters_l2.png}
-\caption{A3b trained filters: all 6 of layer~1 (top) and 10 of layer~2, per input channel
-(bottom).}\label{fig:a3bfilters}
+\includegraphics[width=0.95\linewidth]{A/A3b_filters_l1.png}
+\infer{Layer-1 filters can be read directly: filter 1 (a bright middle column next to dark ones)
+and filter 5 (a bright right column) respond to vertical and steep diagonal strokes, and filter 3
+(a bright top row) to the top edge of a horizontal stroke.}
+\caption{A3b: all 6 trained layer-1 filters.}\label{fig:a3bfilters}
 \end{figure}
 
 \begin{figure}[H]\centering
@@ -302,6 +310,16 @@ Filter 6, which moved least, also gives the weakest maps in
 Figure~\ref{fig:a3bmaps}.}
 \caption{A3b layer-1 filters at the A2 positions before (A2) and after training.  The layer-2
 version is in the code's output (\code{A3b\_before\_after\_l2.png}).}\label{fig:a3bba}
+\end{figure}
+
+\begin{figure}[H]\centering
+\includegraphics[width=0.66\linewidth]{A/A3b_filters_l2.png}
+\infer{Layer-2 filters cannot be read as images: each $5\times5$ slice weights a layer-1 feature
+map, not pixels, so their patterns have no visual meaning.  As the lecture notes say, filter images
+are interpretable only for the first layer; what layer~2 has learned is shown by its feature maps
+(Figure~\ref{fig:a3bmaps}).}
+\caption{A3b: 10 of the 16 trained layer-2 filters, one $5\times5$ slice per input channel.  The
+three A2 positions (1, 6, 11) come first.}\label{fig:a3bfilters2}
 \end{figure}
 
 \begin{figure}[H]\centering
@@ -320,7 +338,10 @@ layer 2 (bottom, 10 filters).}\label{fig:a3bmaps}
 convolution layer is conv2's $16\times8\times8$ output.  For each image the five neurons chosen are
 the five feature maps with the highest peak activation, each at its peak position (taking the five
 largest values outright tends to return neighbouring positions of one map, i.e.\ five nearly
-identical boxes).  Tracing back with Eq.~\eqref{eq:trace}, the neuron at 0-based position $(i,j)$
+identical boxes).  The neurons are chosen per image, so each patch shows what fired most on that
+image, not what one fixed neuron prefers; some maps still recur, map 14 among the five for every
+digit and map 6 for four of them (Table~\ref{tab:a3c}).
+Tracing back with Eq.~\eqref{eq:trace}, the neuron at 0-based position $(i,j)$
 sees input rows and columns $2i$ to $2i+13$: a $14\times14$ patch.
 
 \begin{table}[H]\centering\small\begin{tabular}{@{}lccccc@{}}\toprule image & 1st & 2nd & 3rd & 4th & 5th \\ \midrule
@@ -369,43 +390,45 @@ last-conv receptive field & 51 px (stride 8) & 99 px (stride 16) & 131 px (strid
 \bottomrule\end{tabular}
 \caption{B1 architectures: output size after each stage (channels $\times$ height $\times$ width),
 parameter count and the receptive field of a last-convolution-layer neuron.
-conv1 is 8 filters $11\times11$ stride 4; conv2 16 filters $5\times5$; conv3 32 and conv4 64 filters
+conv1 is 8 filters $11\times11$ stride 4 (as in AlexNet's first layer~\cite{alexnet}); conv2 16 filters $5\times5$; conv3 32 and conv4 64 filters
 $3\times3$, all stride 1 padding 0; every pool is $3\times3$ stride 2; fc1 has 128 ReLU units.  Arch-3
 has no pooling after conv3.  The flatten width is what drives the parameter count: Arch-1's
 $1600\times128$ first dense layer holds most of its parameters.}\label{tab:b1sizes}
 \end{table}
 
 \begin{table}[H]\centering\small
-\begin{subtable}{\linewidth}\centering\begin{tabular}{@{}lrrrrrl@{}}\toprule
-lr & best ep. & stop ep. & best val loss & val acc (\%) & train acc (\%) & flags \\ \midrule
-\rowcolor{selrow}0.0003 (edge) & 20 & 35 & 0.6853 & 74.0 (37/50) & 98.4 & -- \\
-0.001 & 9 & 24 & 0.8032 & 76.0 (38/50) & 94.8 & -- \\
-0.003 & 3 & 18 & 1.2013 & 56.0 (28/50) & 75.6 & -- \\
-0.01 & 3 & 18 & 1.4164 & 42.0 (21/50) & 42.8 & -- \\
-0.03 & 2 & 17 & 1.5797 & 22.0 (11/50) & 21.6 & collapsed \\
-0.1 & 17 & 32 & 1.6102 & 20.0 (10/50) & 20.0 & collapsed \\
+\begin{subtable}{\linewidth}\centering\begin{tabular}{@{}lrrrrr@{}}\toprule
+lr & best ep. & stop ep. & best val loss & val acc (\%) & train acc (\%) \\ \midrule
+\rowcolor{selrow}0.0003 (edge) & 20 & 35 & 0.6853 & 74.0 (37/50) & 98.4 \\
+0.001 & 9 & 24 & 0.8032 & 76.0 (38/50) & 94.8 \\
+0.003 & 3 & 18 & 1.2013 & 56.0 (28/50) & 75.6 \\
+0.01 & 3 & 18 & 1.4164 & 42.0 (21/50) & 42.8 \\
+0.03 & 2 & 17 & 1.5797 & 22.0 (11/50) & 21.6 \\
+0.1 & 17 & 32 & 1.6102 & 20.0 (10/50) & 20.0 \\
 \bottomrule\end{tabular}\caption{Arch-1}\end{subtable}\\[4pt]
-\begin{subtable}{\linewidth}\centering\begin{tabular}{@{}lrrrrrl@{}}\toprule
-lr & best ep. & stop ep. & best val loss & val acc (\%) & train acc (\%) & flags \\ \midrule
-\rowcolor{selrow}0.0003 (edge) & 31 & 46 & 0.5879 & 78.0 (39/50) & 97.2 & -- \\
-0.001 & 15 & 30 & 0.8429 & 74.0 (37/50) & 94.0 & -- \\
-0.003 & 4 & 19 & 1.3200 & 48.0 (24/50) & 54.8 & -- \\
-0.01 & 19 & 34 & 1.0891 & 46.0 (23/50) & 60.0 & -- \\
-0.03 & 14 & 29 & 1.6095 & 20.0 (10/50) & 20.0 & collapsed \\
-0.1 & 0 & 1 & 5.4059 & 20.0 (10/50) & 20.0 & diverged, collapsed \\
+\begin{subtable}{\linewidth}\centering\begin{tabular}{@{}lrrrrr@{}}\toprule
+lr & best ep. & stop ep. & best val loss & val acc (\%) & train acc (\%) \\ \midrule
+\rowcolor{selrow}0.0003 (edge) & 31 & 46 & 0.5879 & 78.0 (39/50) & 97.2 \\
+0.001 & 15 & 30 & 0.8429 & 74.0 (37/50) & 94.0 \\
+0.003 & 4 & 19 & 1.3200 & 48.0 (24/50) & 54.8 \\
+0.01 & 19 & 34 & 1.0891 & 46.0 (23/50) & 60.0 \\
+0.03 & 14 & 29 & 1.6095 & 20.0 (10/50) & 20.0 \\
+0.1 & 0 & 1 & 5.4059 & 20.0 (10/50) & 20.0 \\
 \bottomrule\end{tabular}\caption{Arch-2}\end{subtable}\\[4pt]
-\begin{subtable}{\linewidth}\centering\begin{tabular}{@{}lrrrrrl@{}}\toprule
-lr & best ep. & stop ep. & best val loss & val acc (\%) & train acc (\%) & flags \\ \midrule
-\rowcolor{selrow}0.0003 (edge) & 39 & 54 & 0.7256 & 74.0 (37/50) & 99.6 & -- \\
-0.001 & 13 & 28 & 0.7997 & 68.0 (34/50) & 94.8 & -- \\
-0.003 & 15 & 30 & 0.8885 & 70.0 (35/50) & 91.2 & -- \\
-0.01 & 10 & 25 & 1.2073 & 56.0 (28/50) & 63.2 & -- \\
-0.03 & 14 & 29 & 1.6095 & 20.0 (10/50) & 20.0 & collapsed \\
-0.1 & 0 & 1 & 3.3827 & 18.0 (9/50) & 18.4 & diverged, collapsed \\
+\begin{subtable}{\linewidth}\centering\begin{tabular}{@{}lrrrrr@{}}\toprule
+lr & best ep. & stop ep. & best val loss & val acc (\%) & train acc (\%) \\ \midrule
+\rowcolor{selrow}0.0003 (edge) & 39 & 54 & 0.7256 & 74.0 (37/50) & 99.6 \\
+0.001 & 13 & 28 & 0.7997 & 68.0 (34/50) & 94.8 \\
+0.003 & 15 & 30 & 0.8885 & 70.0 (35/50) & 91.2 \\
+0.01 & 10 & 25 & 1.2073 & 56.0 (28/50) & 63.2 \\
+0.03 & 14 & 29 & 1.6095 & 20.0 (10/50) & 20.0 \\
+0.1 & 0 & 1 & 3.3827 & 18.0 (9/50) & 18.4 \\
 \bottomrule\end{tabular}\caption{Arch-3}\end{subtable}
 \caption{B1 learning-rate grids.  Shaded rows are selected; ``edge'' marks the extra step tried
-because the best grid rate was its lowest.  ``Collapsed'' runs end predicting one class (20\,\%,
-loss $\ln 5$), consistent with a step large enough to switch the ReLUs off.}\label{tab:b1grid}
+because the best grid rate was its lowest.  The rows at about 20\,\% (lr 0.03 and 0.1) collapsed:
+the network ends predicting one class (loss $\approx \ln 5$), consistent with a step large enough to
+switch the ReLUs off.  For Arch-2 and Arch-3 at 0.1 the loss diverged in the first epoch, so the
+untrained weights (best epoch 0) are kept.}\label{tab:b1grid}
 \end{table}
 
 All three architectures selected the extra rate $0.0003$, so their best rate lies at or below the
@@ -448,14 +471,16 @@ architecture is Arch-2 (5-layer): 39/50 correct against
 scores 68.0\,\% (68/100).  Per-class test recall is
 bonsai 80\,\%, buddha 55\,\%, car\_side
 85\,\%, scorpion 50\,\% and starfish
-70\,\%.
+70\,\%.  Arch-2 is the one the protocol selects, but its margin is 2 validation images from a
+single run of each architecture, so the three should be read as performing similarly
+(Section~\ref{sec:limits}).
 
 \begin{figure}[H]\centering
 \includegraphics[width=0.45\linewidth]{B1/B1b_best_cm_test.png}
 \infer{The test accuracy is below the validation accuracy that selected the model; that drop is
 expected, because the validation set was used to choose the epoch, the learning rate and the
 architecture (Section~\ref{sec:limits}).  car\_side, the one entirely greyscale class, has the
-highest recall.  The most confused pair is scorpion and starfish
+highest recall, which may partly reflect that the absence of colour alone identifies it.  The most confused pair is scorpion and starfish
 (8 of the 32 errors, both directions together), and the largest single
 cell is scorpion predicted as bonsai (5).}
 \caption{B1b: test confusion matrix of Arch-2 (5-layer).}\label{fig:b1test}
@@ -491,7 +516,20 @@ large regions, and the strongest conv3 map is active almost everywhere.}
 For one training image per class, the single most activated neuron of conv3 (Arch-2's last
 convolution layer, $32\times8\times8$) is traced back with Eq.~\eqref{eq:trace}.  Its receptive
 field is 99$\times$99 pixels, and neighbouring neurons are 16 pixels
-apart.
+apart.  As in A3c, the neuron is chosen per image, so each patch shows what fired most on that
+image, not what one fixed neuron prefers; map 9 is the winner for four of the five images.
+
+\begin{figure}[H]\centering
+\includegraphics[width=0.38\linewidth]{B1/B1d_patches.png}
+\infer{Every patch lies on the object: the trunk and lower foliage of the bonsai, the shoulder of
+the buddha, the body and wheels of the car, the claws of the scorpion and a starfish.  The same
+feature map (map 9) is the most active unit for four of the five classes, so it responds to objects
+in general rather than to one class.  The starfish neuron fires far more weakly (3.44, against
+7.7--9.2 for the others) and from a different map: the image is low in contrast, small
+sand-coloured starfish on sand.}
+\caption{B1d: each image with the patch of its most activated conv3 neuron (left) and the patch
+itself (right).}\label{fig:b1d}
+\end{figure}
 
 \begin{table}[H]\centering\small\begin{tabular}{@{}lrrrl@{}}\toprule image & map & (row, col) & activation & input patch \\ \midrule
 bonsai & 9 & (4, 5) & 7.71 & rows 49--147, cols 65--163 \\
@@ -504,22 +542,11 @@ starfish & 25 & (6, 2) & 3.44 & rows 81--179, cols 17--115 \\
 rows and columns).}\label{tab:b1d}
 \end{table}
 
-\begin{figure}[H]\centering
-\includegraphics[width=0.42\linewidth]{B1/B1d_patches.png}
-\infer{Every patch lies on the object: the trunk and lower foliage of the bonsai, the shoulder of
-the buddha, the body and wheels of the car, the claws of the scorpion and a starfish.  The same
-feature map (map 9) is the most active unit for 4 of the
-five images, so this unit is a strong general responder to object texture rather than a detector
-for one class.}
-\caption{B1d: each image with the patch of its most activated conv3 neuron (left) and the patch
-itself (right).}\label{fig:b1d}
-\end{figure}
-
 % =====================================================================================
 \section{Part B2: Transfer Learning with VGG19}\label{sec:b2}
 
 \subsection{Model}
-\code{keras.applications.VGG19} with ImageNet weights is used with its full classifier.  Only the
+\code{keras.applications.VGG19}~\cite{vgg} with ImageNet weights is used with its full classifier.  Only the
 final 1000-way layer is replaced, by a 5-way softmax layer, and only that layer is trained
 (20,485 of 139,590,725 parameters); this follows the lecture notes' advice to retrain
 only the softmax layer when the dataset is small.  Since everything below the new layer is frozen,
@@ -528,13 +555,13 @@ once per image and the layer is trained on those values.  This is the same train
 the frozen network at every step, and the code checks that the assembled model gives identical
 predictions.
 
-\begin{table}[H]\centering\small\begin{tabular}{@{}lrrrrrl@{}}\toprule
-lr & best ep. & stop ep. & best val loss & val acc (\%) & train acc (\%) & flags \\ \midrule
-0.001 & 1 & 16 & 0.0296 & 98.0 (49/50) & 98.0 & -- \\
-0.003 & 500 & 500 & 0.0081 & 100.0 (50/50) & 100.0 & epoch cap \\
-0.01 & 1 & 16 & 0.0163 & 98.0 (49/50) & 100.0 & -- \\
-\rowcolor{selrow}0.03 & 4 & 19 & 0.0000 & 100.0 (50/50) & 100.0 & -- \\
-0.1 & 4 & 19 & 1.0027 & 96.0 (48/50) & 100.0 & -- \\
+\begin{table}[H]\centering\small\begin{tabular}{@{}lrrrrr@{}}\toprule
+lr & best ep. & stop ep. & best val loss & val acc (\%) & train acc (\%) \\ \midrule
+0.001 & 1 & 16 & 0.0296 & 98.0 (49/50) & 98.0 \\
+0.003 & 500 & 500 & 0.0081 & 100.0 (50/50) & 100.0 \\
+0.01 & 1 & 16 & 0.0163 & 98.0 (49/50) & 100.0 \\
+\rowcolor{selrow}0.03 & 4 & 19 & 0.0000 & 100.0 (50/50) & 100.0 \\
+0.1 & 4 & 19 & 1.0027 & 96.0 (48/50) & 100.0 \\
 \bottomrule\end{tabular}
 \caption{B2 learning-rate grid for the retrained layer.}\label{tab:b2grid}
 \end{table}
@@ -597,7 +624,7 @@ starfish & 499 & (10, 10) & 58 & rows 27--224, cols 27--224 \\
 \includegraphics[width=0.62\linewidth]{B2/B2b_patches.png}
 \infer{For a neuron this deep the receptive-field box carries almost no information, since it is
 close to the whole image.  The gradient map is what localises the neuron: its mass sits on the
-object (the trunk and pot of the bonsai, the torso of the buddha, the car body, the scorpion's
+object (the trunk and pot of the bonsai, the left arm and side of the buddha, the car body, the scorpion's
 body, the nearest starfish), so the neuron's effective field is much smaller than its theoretical
 one.}
 \caption{B2b: image with the clipped receptive-field box (left), the box contents (middle) and the
@@ -608,7 +635,7 @@ neuron's input-gradient magnitude (right).}\label{fig:b2b}
 For the B1c bonsai image, five \code{block5\_conv4} neurons with non-zero activation are chosen:
 feature maps in order of peak activation, each at its peak, skipping any within 3 positions of a
 neuron already chosen (the strongest maps all peak around the same object part).  Keeping only the
-chosen neuron and backpropagating to the input, guided backpropagation passes a gradient through a
+chosen neuron and backpropagating to the input, guided backpropagation~\cite{springenberg} passes a gradient through a
 ReLU only where both the forward input and the incoming gradient are positive,
 \begin{equation}\label{eq:guided}
 R^{(l)} = \mathbb 1\!\left[x^{(l)} > 0\right]\,\mathbb 1\!\left[R^{(l+1)} > 0\right]\,R^{(l+1)} ,
@@ -633,12 +660,14 @@ trunk, one of the light-green cones, the left rim of the pot, a cone on the left
 left corner.  The neuron at grid position (1,\,1) responds to the top-left corner of the frame and
 the cone nearest to it.  The guided images show those parts as sharp edges and colour, whereas the
 plain gradients (bottom row) cover the same regions but as noise.  Even at the last convolution
-layer, a single neuron encodes a part, not the object.}
+layer, a single neuron encodes a part, not the object.  Guided backpropagation is used here as a
+visualisation: its sharp, image-like detail partly comes from the ReLU masking itself, so it shows
+where a neuron looks, not a faithful measure of what it uses.}
 \caption{B2c: guided backpropagation (top) and the plain gradient (bottom) for the five neurons.}\label{fig:b2c}
 \end{figure}
 
 \subsection{B2d -- Grad-CAM}
-Grad-CAM, following the Keras example, weights each \code{block5\_conv4} feature map $A^k$ by the
+Grad-CAM~\cite{gradcam}, following the Keras example~\cite{keras}, weights each \code{block5\_conv4} feature map $A^k$ by the
 average gradient of the class score $y^c$ (before softmax) over its positions and keeps the positive
 part of the weighted sum:
 \begin{equation}\label{eq:gradcam}
@@ -666,7 +695,7 @@ the class's defining part: the wheels of the car, the head of the buddha, the bo
 the largest starfish.  For bonsai, the evidence sits on the pot and soil more than on the tree,
 which suggests the model recognises a bonsai partly by its pot.  Maps for the wrong classes are
 weaker and fall on parts that resemble those classes (the starfish map of the buddha falls on the
-torso, the scorpion map of the starfish image on another starfish).  Because every map is
+torso, the scorpion map of the starfish image on an arm of the large starfish).  Because every map is
 scaled to its own maximum, only the printed raw maxima can be compared across panels.}
 \caption{B2d Grad-CAM: each image (rows) against each target class (columns); the true class is
 framed.}\label{fig:b2d}
@@ -689,8 +718,8 @@ framed.}\label{fig:b2d}
 \item \textbf{car\_side is entirely greyscale.}  Its recognition can rest partly on the absence of
   colour, which may contribute to its high recall in B1b.
 \item \textbf{The VGG19 learning rate was chosen at a ceiling.}  With all rates near 100\,\%
-  validation accuracy, the selected rate won on a validation loss of order $10^{-8}$ reached in one
-  epoch; any rate from 0.001 to 0.03 would give the same conclusion in B2a.
+  validation accuracy, the selected rate won on a validation loss of order $10^{-8}$ that lasted one
+  epoch (epoch 4; it was back above $10^{-3}$ at epoch 5); any rate from 0.001 to 0.03 would give the same conclusion in B2a.
 \item \textbf{Receptive fields beyond the image.}  For \code{block5\_conv4} the traced box is
   clipped to almost the whole image, so B2b's localisation comes from the gradient map, not from
   the box.
@@ -702,7 +731,7 @@ Building the network from its parts made each part's role visible: a random filt
 responds to edges, ReLU and pooling turn those responses into sparse, lower-resolution maps, and
 training sharpens the filters without discarding their initial structure, reaching
 99.42\,\% on the MNIST subset.  On Caltech-101 with 250 training images, three CNNs
-trained from scratch all overfit heavily and reach 68.0\,\% at best on test, while
+trained from scratch all overfit heavily, and the one selected on validation reaches 68.0\,\% on test, while
 ImageNet features with a retrained final layer reach 100.0\,\%.  On this data, the
 features a network starts with matter far more than which of the three specified architectures it
 uses.  The

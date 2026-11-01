@@ -11,7 +11,7 @@ Sources: `CS601T_Assignment5_Details_12October2026.pdf` (the sheet) and `Class22
 |---|---|
 | MNIST (Group 11) | `Assignment4/Data/Group_11`, classes 0 4 5 6 7, 2277 / 759 / 759 per class (train/val/test), JPEG 28×28 |
 | Caltech (Group 11) | `Assignment5/Group_11`, classes bonsai buddha car_side scorpion starfish, 50 / 10 / 20 per class → 250 / 50 / 100, sizes 124–300 px |
-| Greyscale images | **car_side 80/80**, buddha 4/80, starfish 3/80, others 0 → colour alone identifies car_side (see §6.4) |
+| Greyscale images | **car_side 80/80**, buddha 4/80, starfish 4/80 (one stored as RGB with identical channels), others 0 → colour alone identifies car_side (see §6.4) |
 | venv | `/home/anshuman139/Deep-Learning/.venv`, Python 3.12.3, torch 2.14 (+cu130 build, no GPU on this laptop), matplotlib 3.11, numpy 2.5, sklearn 1.9, PIL 12.3. **No TensorFlow/Keras, no pytest.** |
 | CPU timing, batch-1 SGD | Part A net: 0.68 ms/step → **7.8 s/epoch** with `torch.set_num_threads(1)` (72 s/epoch with 8 threads — 10× slower). Part B Arch-1: 0.5 s/epoch. |
 
@@ -106,8 +106,8 @@ Expected sizes (asserted in code, tabulated in the report): 28×28 → conv5 **6
 - `conv_manual.py`: explicit double loop over output positions, stride 1, padding 0, cross-correlation (no flip — the notes' image formula I(i+a, j+b)·K(a, b), same as every framework). No activation (sheet asks only for the convolution).
 - Size check: formula ⌊(W − F + 2P)/S⌋ + 1 = 24 printed next to the measured shape.
 - Outputs:
-  - `A1_filter.png` — 5×5 filter as image **with the numeric values printed in each cell** (like slides 107–110), diverging colormap centred at 0.
-  - `A1_feature_maps.png` — 5 rows (one per class): image | feature map (diverging, symmetric colour limits, colorbar).
+  - `A1_filter.png` — 5×5 filter as image **with the numeric values printed in each cell** (like slides 107–110), grey scale centred at 0 (as the notes).
+  - `A1_feature_maps.png` — 5 rows (one per class): image | feature map (viridis, shared limits, colorbar).
   - `A1_filter_values.csv` and the table of expected vs obtained dimensions (also printed to log).
 
 ### A2 — `ConvReLUPool` class, two stacked layers (untrained)
@@ -177,7 +177,7 @@ All three trained under §3 rules (same lr, same init of shared layers, same ord
 ## 6. Plotting standards ("clear output, no formatting issues")
 
 1. One `plots.py`; every figure is created by a helper and saved by `save_fig()`. Global rcParams set once: DejaVu Sans, font sizes 9–11, `constrained_layout`, dpi 200 PNG **and** PDF (vector for the report).
-2. Colormaps by meaning, consistent everywhere: input images `gray` (MNIST) / RGB (Caltech); **signed** quantities (filters, A1 un-activated maps, gradients) `RdBu_r` with symmetric limits centred at 0; **non-negative** (ReLU maps) `viridis` from 0; Grad-CAM `jet` overlay α = 0.4 (keras.io convention). Every heat-type panel has a colorbar or a stated shared scale.
+2. Colormaps by meaning, consistent everywhere: input images `gray` (MNIST) / RGB (Caltech); filters `gray` with symmetric limits (mid-grey = 0), as the notes draw filters (slides 107-110, 125); feature maps `viridis` (ReLU maps from 0, the signed A1 map min..max), as the notes draw feature maps; gradients on a mid-grey background (slides 141-144); Grad-CAM `jet` overlay α = 0.4 (keras.io convention). Every heat-type panel has a colorbar or a stated shared scale.
 3. Pixel-art images use `interpolation="nearest"`; ticks off on image grids; every panel titled (class name, filter/map index 1-based).
 4. Confusion matrices: fixed class order everywhere (alphabetical = ImageFolder order), labels on both axes ("True"/"Predicted"), counts + row-%, text colour switches with cell darkness, x labels rotated 30° (car_side / starfish fit), accuracy in the title.
 5. Box overlays: drawn on pixel edges, linewidth scaled to image size, distinct high-contrast colours + legend.

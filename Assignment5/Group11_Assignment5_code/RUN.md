@@ -67,4 +67,4 @@ The run is deterministic, so you should get exactly these numbers. If yours diff
 | B1 Arch-3 | 0.0003 | val 74% |
 | B2 VGG19 | 0.03 | 100% on train, val and test |
 
-The method and design choices are explained in `README.md` and `../PLAN.md`.
+The method and design choices are explained in `README.md`.
